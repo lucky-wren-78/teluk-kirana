@@ -1,58 +1,126 @@
-// combat.js — the simple end of Teluk Kirana's crime: a punch that drops
-// whoever stands in front of the player, and — once Bimo hands over the pistol
-// in job 2 — a hitscan shot. Both are crimes: main.js reads the returned event
-// and adds heat.
+// combat.js - pistol shooting for Teluk Kirana.
+// A hitscan pistol fired with the mouse or the F key: a ray from the
+// player toward the aim direction, a muzzle flash, a tracer line,
+// damage to pedestrians, police and cars, and return fire pressure
+// through the wanted system.
 
-import { distance2d } from './random.js';
-import { knockDownPedestrian } from './pedestrians.js';
+import * as THREE from 'three';
+import { distance2d } from './rng.js';
+import { damageCar } from './vehicles.js';
 
-function inFrontArc(player, x, z, range, arcCos) {
-  const dx = x - player.x;
-  const dz = z - player.z;
-  const d = Math.hypot(dx, dz);
-  if (d > range || d < 0.001) return false;
-  const fx = Math.sin(player.heading);
-  const fz = Math.cos(player.heading);
-  return (dx * fx + dz * fz) / d > arcCos;
-}
+export class Combat {
+  constructor(scene, audio, police, peds) {
+    this.scene = scene;
+    this.audio = audio;
+    this.police = police;
+    this.peds = peds;
+    this.cooldown = 0;
+    this.flashTime = 0;
+    // Muzzle flash: a small bright plane shown for a few frames.
+    this.flash = new THREE.Mesh(
+      new THREE.PlaneGeometry(0.55, 0.55),
+      new THREE.MeshBasicMaterial({ color: 0xffd76a, transparent: true, opacity: 0.95 }),
+    );
+    this.flash.visible = false;
+    scene.add(this.flash);
+    // Tracer: a thin stretched box from muzzle to hit point.
+    this.tracer = new THREE.Mesh(
+      new THREE.BoxGeometry(0.03, 0.03, 1),
+      new THREE.MeshBasicMaterial({ color: 0xffe9a0, transparent: true, opacity: 0.8 }),
+    );
+    this.tracer.visible = false;
+    scene.add(this.tracer);
+    this.raycaster = new THREE.Raycaster();
+    this.shotsFired = 0;
+  }
 
-// A swing of the fists. Returns 'ped' when someone went down, else null.
-export function tryMeleeAttack(player, peds) {
-  player.attackTimer = 0.32;
-  for (const ped of peds) {
-    if (ped.downTime <= 0 && inFrontArc(player, ped.x, ped.z, 2.7, 0.25)) {
-      knockDownPedestrian(ped, 7);
-      return 'ped';
+  // Try to fire. aimYaw is the camera yaw; the shot goes forward from
+  // the player in that direction at chest height.
+  fire(player, aimYaw, now, targetMeshes) {
+    if (this.cooldown > 0 || player.dead) return false;
+    this.cooldown = 0.24;
+    this.shotsFired++;
+    const p = player.pos;
+    const origin = new THREE.Vector3(p.x, 1.45, p.z);
+    const dir = new THREE.Vector3(Math.sin(aimYaw), -0.02, Math.cos(aimYaw)).normalize();
+    this.audio.gunshot();
+
+    // Muzzle flash at the gun position.
+    this.flash.position.copy(origin).addScaledVector(dir, 0.7);
+    this.flash.lookAt(origin.clone().addScaledVector(dir, 2));
+    this.flash.visible = true;
+    this.flashTime = 0.05;
+
+    // Raycast against the world meshes the caller gathered.
+    this.raycaster.set(origin, dir);
+    this.raycaster.far = 90;
+    const hits = this.raycaster.intersectObjects(targetMeshes, true);
+    let end = origin.clone().addScaledVector(dir, 60);
+    if (hits.length > 0) end = hits[0].point;
+
+    // Tracer from muzzle to the hit point.
+    const mid = origin.clone().add(end).multiplyScalar(0.5);
+    this.tracer.position.copy(mid);
+    this.tracer.lookAt(end);
+    this.tracer.scale.set(1, 1, origin.distanceTo(end));
+    this.tracer.visible = true;
+    this.flashTime = Math.max(this.flashTime, 0.05);
+    this.tracerTime = 0.045;
+
+    // Apply damage by distance to known actors (robust and simple).
+    this.applyDamage(p, dir, end);
+    // A gunshot is a loud crime: heat rises and people panic.
+    this.police.commitCrime(0.55);
+    return true;
+  }
+
+  applyDamage(fromPos, dir, endPoint) {
+    // Pedestrians near the line of fire.
+    for (const ped of this.peds) {
+      if (ped.dead) continue;
+      if (distance2d(ped.x, ped.z, endPoint.x, endPoint.z) < 1.1) {
+        ped.kill();
+        this.police.commitCrime(1.2);
+      }
+    }
+    // Police cars and civilian cars near the hit point.
+    const allCars = this.extraCars || [];
+    for (const car of allCars) {
+      if (distance2d(car.x, car.z, endPoint.x, endPoint.z) < 2.4) {
+        const destroyed = damageCar(car, 34);
+        if (car.police) this.police.commitCrime(0.9);
+        if (destroyed && car.police) this.police.commitCrime(0.8);
+      }
     }
   }
-  return null;
-}
 
-// A pistol shot down the player's facing. Returns what was hit:
-// 'ped', 'car', or null (a shot fired into the air is still a crime).
-export function tryPistolShot(player, peds, vehicles) {
-  player.attackTimer = 0.22;
-  let best = null;
-  let bestDist = 34;
-  let bestTarget = null;
-  for (const ped of peds) {
-    if (ped.downTime > 0) continue;
-    const d = distance2d(player.x, player.z, ped.x, ped.z);
-    if (d < bestDist && inFrontArc(player, ped.x, ped.z, 34, 0.965)) {
-      best = 'ped';
-      bestDist = d;
-      bestTarget = ped;
+  // Police shoot back when the player is on foot at high heat.
+  policeReturnFire(dt, player, now) {
+    if (!player.car && this.police.stars >= 2 && !player.dead) {
+      this.returnTimer = (this.returnTimer || 0) + dt;
+      if (this.returnTimer > 1.4) {
+        this.returnTimer = 0;
+        const p = player.pos;
+        let nearest = Infinity;
+        for (const car of this.police.cars) {
+          nearest = Math.min(nearest, distance2d(car.x, car.z, p.x, p.z));
+        }
+        if (nearest < 30) {
+          player.hurt(4 + this.police.stars * 1.5, now);
+          this.audio.gunshot(0.4);
+        }
+      }
     }
   }
-  for (const car of vehicles) {
-    const d = distance2d(player.x, player.z, car.x, car.z);
-    if (d < bestDist && inFrontArc(player, car.x, car.z, 34, 0.9)) {
-      best = 'car';
-      bestDist = d;
-      bestTarget = car;
+
+  update(dt) {
+    if (this.cooldown > 0) this.cooldown -= dt;
+    if (this.flashTime > 0) {
+      this.flashTime -= dt;
+      if (this.flashTime <= 0) {
+        this.flash.visible = false;
+        this.tracer.visible = false;
+      }
     }
   }
-  if (best === 'ped' && bestTarget) knockDownPedestrian(bestTarget, 9);
-  if (best === 'car' && bestTarget) bestTarget.health -= 16;
-  return best;
 }

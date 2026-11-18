@@ -1,50 +1,69 @@
-// save.js — the season save in localStorage: money, respect, per-district
-// reputation, story progress and the pistol unlock. Nothing else persists;
-// the city itself is rebuilt from its seed on every load.
+// save.js - localStorage save game for Teluk Kirana.
+// Stores cash, respect, finished story jobs, the player's last
+// position and a clean wanted state. Autosaves on a timer, on job
+// completion and on page hide. A reset button lives on the start
+// screen.
 
-import { SAVE_KEY } from './config.js';
+const SAVE_KEY = 'teluk-kirana-save-v1';
 
-export function defaultSave() {
-  return {
-    money: 120,
-    respect: 0,
-    jobIndex: 0,
-    seasonDone: false,
-    hasPistol: false,
-    districtRep: { harbour: 0, oldtown: 0, downtown: 0, palm: 0 },
-    racesWon: 0,
-  };
-}
+export const DEFAULT_SAVE = {
+  cash: 250,
+  respect: 0,
+  jobsDone: [],
+  sideDone: 0,
+  x: 0,
+  z: 0,
+  station: 0,
+};
 
 export function loadSave() {
   try {
-    const raw = localStorage.getItem(SAVE_KEY);
-    if (!raw) return null;
+    const raw = window.localStorage.getItem(SAVE_KEY);
+    if (!raw) return { ...DEFAULT_SAVE };
     const parsed = JSON.parse(raw);
-    if (typeof parsed.money !== 'number' || typeof parsed.jobIndex !== 'number') return null;
-    const base = defaultSave();
     return {
-      ...base,
-      ...parsed,
-      districtRep: { ...base.districtRep, ...(parsed.districtRep || {}) },
+      cash: Number.isFinite(parsed.cash) ? parsed.cash : DEFAULT_SAVE.cash,
+      respect: Number.isFinite(parsed.respect) ? parsed.respect : 0,
+      jobsDone: Array.isArray(parsed.jobsDone) ? parsed.jobsDone : [],
+      sideDone: Number.isFinite(parsed.sideDone) ? parsed.sideDone : 0,
+      x: Number.isFinite(parsed.x) ? parsed.x : 0,
+      z: Number.isFinite(parsed.z) ? parsed.z : 0,
+      station: Number.isFinite(parsed.station) ? parsed.station : 0,
     };
   } catch {
-    return null;
+    return { ...DEFAULT_SAVE };
   }
 }
 
-export function storeSave(data) {
+export function writeSave(state) {
   try {
-    localStorage.setItem(SAVE_KEY, JSON.stringify(data));
+    window.localStorage.setItem(SAVE_KEY, JSON.stringify({
+      cash: Math.round(state.cash),
+      respect: Math.round(state.respect),
+      jobsDone: state.jobsDone,
+      sideDone: state.sideDone || 0,
+      x: Math.round(state.x * 10) / 10,
+      z: Math.round(state.z * 10) / 10,
+      station: state.station || 0,
+    }));
+    return true;
   } catch {
-    // Private mode or a full store: the season simply will not persist.
+    return false;
   }
 }
 
 export function clearSave() {
   try {
-    localStorage.removeItem(SAVE_KEY);
+    window.localStorage.removeItem(SAVE_KEY);
   } catch {
-    // Nothing to clear.
+    // Storage may be unavailable; nothing else to do.
+  }
+}
+
+export function hasSave() {
+  try {
+    return window.localStorage.getItem(SAVE_KEY) !== null;
+  } catch {
+    return false;
   }
 }

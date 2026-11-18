@@ -1,83 +1,87 @@
-# TELUK KIRANA: Heat Season
+# Teluk Kirana: Heat Season
 
-[![make.fun bounty: gta6-01](https://make.fun/badge/gta6-01.svg)](https://make.fun/c/gta6-01)
-[![Teluk Kirana rank on make.fun](https://make.fun/badge/gta6-01/lucky-wren-78/teluk-kirana/rank.svg)](https://make.fun/c/gta6-01)
-[![Teluk Kirana reward on make.fun](https://make.fun/badge/gta6-01/lucky-wren-78/teluk-kirana/reward.svg)](https://make.fun/c/gta6-01)
+![Bounty](https://make.fun/badge/gta6-01.svg)
+![Rank](https://make.fun/badge/gta6-01/lucky-wren-78/teluk-kirana/rank.svg)
+![Reward](https://make.fun/badge/gta6-01/lucky-wren-78/teluk-kirana/reward.svg)
 
-An entry for the make.fun bounty [gta6-01](https://make.fun/c/gta6-01): a 3D
-open-world crime game in a fictional tropical island port, built with three.js
-and played offline in a desktop browser from static files.
+An original 3D open-world crime game set in a tropical Indonesian port city at
+golden-hour dusk, built with three.js and plain static files — no build step,
+no network requests. Play it by serving `game/` with any static server
+(`node serve.ts`, then open http://localhost:8080).
 
-**6 story jobs · 5-star wanted system with helicopter pursuit · drivable
-traffic & carjacking · district reputation · 3-station synth radio · saves**
+Bounty: https://make.fun/bounty/gta6-01
 
-## The game
+## The city
 
-Teluk Kirana is an island port at golden hour: downtown glass towers, the
-old town, palm-roofed Bukit Palem, and the container harbour with its cranes.
-You are the new driver Sari the harbour fixer keeps hearing about. Run her
-jobs, build your name district by district, and stay ahead of the Patroli.
+Teluk Kirana is a procedurally built port city of five districts, each with its
+own palette and building heights:
 
-- **Open world on foot and by car** — a 9×9 street grid with traffic AI,
-  pedestrians, parked cars and a south pier, all grown from a seed.
-- **Carjacking** — take any parked car or pull a driver out of traffic. The
-  city notices.
-- **5-star wanted system** — heat rises with every crime and cools when you
-  behave; police cars hunt and ram, and from four stars a helicopter orbits
-  with a spotlight. Get boxed in and you are busted.
-- **6 story jobs** — Sari and Bimo send you across the island: a first
-  delivery, a repossessed Comet GT (and a pistol), three unmarked crates, a
-  singer who hates being late, a bank vault, and a finale checkpoint run to
-  Sari's boat. Plus a repeatable beach-road street race.
-- **District reputation** — finishing jobs raises your standing where the
-  work happened.
-- **HUD + minimap** — wallet, respect, wanted stars, health, objective line,
-  dialogue, and a live canvas minimap with traffic, police and the objective
-  beacon.
-- **Radio & sound** — three procedural WebAudio radio stations, engine hum,
-  siren, and effects. No audio files.
-- **Saves** — money, respect, story progress and unlocks persist in
-  localStorage.
+- **Pelabuhan Lama / Old Harbor** — pier, cranes, container stacks, boats
+- **Pasar Raya / Grand Market** — dense mid-rise market blocks
+- **Bukit Palma / Palm Heights** — tall pale towers
+- **Pantai Kirana / Kirana Beach** — low golden beachfront blocks
+- **Kawasan Galangan / Shipyard Flats** — industrial yards and warehouses
 
-Everything is original: the city, the people and the stories are invented.
-No assets, names, characters or music from any commercial game.
+A 7×7 road grid with painted markings, sidewalks, palm-lined avenues, street
+lamps, glowing windows, drifting clouds, warm fog and a low sun over the water.
 
-## How to play
+## Features
 
-Serve the game locally and open it in a desktop browser:
+- **6 story jobs** in sequence, each with opening dialogue and a distinct
+  objective: deliver a car, a timed spice-package run, escaping a 3-star
+  manhunt, a passenger ride to the beach, chasing down a runaway truck, and a
+  finale cargo run under the police helicopter. Rewards pay cash and respect.
+- **5-star wanted system**: police cars chase and ram with flashing light
+  bars; at 3 stars a helicopter joins with a tracking spotlight. Heat cools
+  when you break line of sight; get surrounded on foot and you are busted.
+- **Traffic and pedestrians**: cars loop the grid and brake for each other,
+  pedestrians stroll the sidewalks and flee from gunfire and fast cars.
+- **Carjacking**: any car can be taken with E — parked or with its driver
+  inside, who bails out and runs.
+- **Combat**: a hitscan pistol with muzzle flash and tracers; police return
+  fire at high wanted levels; death or arrest means hospital fines.
+- **3 radio stations** synthesized live with WebAudio (tropical chill,
+  synthwave, dangdut-style percussion) plus engine, horn, siren, crash,
+  gunshot and helicopter sound effects. Press R while driving to switch.
+- **Side activities**: repeatable taxi fares (T) and a checkpoint street
+  race (G).
+- **Saves**: cash, respect, finished jobs and position persist in
+  localStorage, with autosave and a reset option on the start screen.
+- **HUD**: health and arrest bars, wanted stars, cash/respect, speedometer,
+  radio readout, objective banner, dialog box and a live 2D minimap showing
+  roads, traffic, police, the player and the objective marker.
 
-```bash
-node serve.ts
-# open http://localhost:8080
-```
+## Controls
 
 | Key | Action |
 | --- | --- |
-| WASD / arrows | Move on foot · drive |
-| E | Enter / exit car (carjack) |
-| F | Punch · shoot (click, once the pistol is unlocked) |
+| WASD / arrows | Move / drive |
+| Mouse (click to lock) | Camera |
 | Shift | Sprint |
-| Space | Handbrake |
-| R | Cycle radio station |
-| P / Esc | Pause |
+| E | Enter / exit car, advance dialog |
+| F or click | Fire pistol |
+| R | Change radio station (in car) |
+| H | Horn |
+| J | Start next story job |
+| T | Taxi fare |
+| G | Street race |
+| P | Pause |
 
-Screenshots are posed by the game itself: open `?shot=1` … `?shot=4` (with
-`&seed=7&quality=high` for the entry frames) for the four programmed scenes.
-`node shoot.mjs` runs the smoke test and regenerates `screenshots/`.
+## Screenshots
+
+The four screenshots in `screenshots/` are real renders of the game taken by
+`shoot.mjs`, which drives the game's deterministic `?shot=` scenes
+(cover chase, city overview, on-foot dialog, harbor at dusk) in headless
+Chromium at 1280×720.
 
 ## Layout
 
-- `game/` — the game itself: `index.html`, `style.css`, `src/` (one module
-  per system: `config`, `world`, `vehicles`, `police`, `missions`, `hud`,
-  `audio`, `player`, `pedestrians`, `combat`, `save`, `shots`, `main`) and
-  `vendor/three.module.min.js` (vendored three.js).
-- `main.ts` — the entry program (Node 22, stdlib only): copies `game/` and
-  `screenshots/` to `/output` and writes `dossier.json`. Run it twice and
-  the bytes are identical.
-- `serve.ts` — a tiny static server for local play.
-- `shoot.mjs` — the repo's play-test + screenshot tool.
-- `shots.json` — the four programmed screenshot poses.
-- `screenshots/` — the entry screenshots (cover first).
+- `game/` — the playable static game (`index.html`, `style.css`, `src/*.js`
+  modules, vendored three.js under `game/vendor/`)
+- `main.ts` — packages `game/` + `screenshots/` into the output dossier
+- `serve.ts` — local static server for playing
+- `shoot.mjs` — screenshot script
+- `shots.json` — the screenshot scene list
 
 ## License
 

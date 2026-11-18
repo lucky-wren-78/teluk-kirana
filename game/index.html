@@ -1,90 +1,90 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Teluk Kirana: Heat Season — a tropical open-world crime game</title>
+<title>Teluk Kirana: Heat Season</title>
 <link rel="stylesheet" href="./style.css">
+<script type="importmap">
+{ "imports": { "three": "./vendor/three.module.min.js" } }
+</script>
 </head>
 <body>
-<div id="scene-container" aria-label="Teluk Kirana game view"></div>
-<div id="vignette"></div>
-<div id="damage-flash"></div>
+<div id="game"></div>
 
-<!-- In-game HUD -->
-<div id="hud" class="hidden">
-  <div id="minimap-wrap">
-    <canvas id="minimap" width="184" height="184"></canvas>
-    <div id="district-name">Pusat Kota</div>
+<!-- Heads-up display -->
+<div id="hud">
+  <div id="topLeft">
+    <div id="healthWrap"><div id="healthFill"></div></div>
+    <div id="arrestWrap"><div id="arrestFill"></div></div>
+    <div id="districtLabel">Pelabuhan Lama</div>
   </div>
-  <div id="wanted-box"><span id="stars">☆☆☆☆☆</span></div>
-  <div id="wallet-box">
-    <div id="money">$0</div>
-    <div id="respect">RESPECT 0</div>
-    <div id="radio-label">RADIO OFF</div>
+  <div id="topRight">
+    <div id="wantedStars">☆☆☆☆☆</div>
+    <div id="cashLabel">$0</div>
+    <div id="respectLabel">Respect 0</div>
+    <div id="timerLabel"></div>
   </div>
-  <div id="status-box">
-    <div id="health-track"><div id="health-fill"></div></div>
-    <div id="vehicle-info"></div>
+  <div id="objectiveBar"><span id="objectiveLabel"></span></div>
+  <div id="jobBanner"><div id="bannerTitle"></div><div id="bannerSub"></div></div>
+  <div id="bottomRight">
+    <canvas id="minimap" width="168" height="168"></canvas>
+    <div id="speedLabel"></div>
+    <div id="radioLabel"></div>
   </div>
-  <div id="objective-box" class="hidden">
-    <div id="obj-title">JOB</div>
-    <div id="obj-row"><span id="obj-text"></span><span id="obj-dist"></span></div>
+  <div id="promptLabel"></div>
+  <div id="toast"></div>
+  <div id="dialogBox">
+    <div id="dialogName"></div>
+    <div id="dialogText"></div>
+    <div id="dialogHint">E / click - next</div>
   </div>
-  <div id="dialog-box" class="hidden">
-    <div id="dialog-name">SARI</div>
-    <div id="dialog-line"></div>
-  </div>
-  <div id="prompt" class="hidden"></div>
-  <div id="toast" class="hidden"></div>
-  <div id="banner" class="hidden">
-    <div id="banner-title"></div>
-    <div id="banner-sub"></div>
-  </div>
-  <div id="controls-hint">WASD move · E enter car · F attack · Shift sprint · R radio · P pause</div>
 </div>
 
 <!-- Start screen -->
-<div id="start-screen">
-  <div id="start-inner">
-    <div id="start-kicker">A TROPICAL OPEN-WORLD CRIME GAME</div>
-    <h1 id="start-title">TELUK KIRANA</h1>
-    <div id="start-sub">— HEAT SEASON —</div>
-    <p id="start-blurb">One island port, six story jobs, a five-star police force that
-      does not give up. Steal cars, run the docks, build your name district by district.</p>
-    <div id="start-buttons">
-      <button id="btn-new" class="big-btn">NEW GAME</button>
-      <button id="btn-continue" class="big-btn alt">CONTINUE</button>
+<div id="startScreen">
+  <div class="panel">
+    <div class="kicker">A tropical port city open world</div>
+    <h1>TELUK KIRANA</h1>
+    <div class="subtitle">HEAT SEASON</div>
+    <p class="blurb">Six story jobs across five districts. Steal cars, run fares,
+      dodge a five-star police force with a helicopter, and own the bay by sunset.</p>
+    <button id="startBtn">START ENGINE</button>
+    <button id="resetBtn" class="ghost">Reset save</button>
+    <div class="controls">
+      <div><b>WASD</b> move / drive</div>
+      <div><b>Mouse</b> camera (click to lock)</div>
+      <div><b>Shift</b> sprint</div>
+      <div><b>E</b> enter / exit car, talk</div>
+      <div><b>F / click</b> pistol</div>
+      <div><b>R</b> radio station</div>
+      <div><b>H</b> horn</div>
+      <div><b>J</b> next story job</div>
+      <div><b>T</b> taxi fare</div>
+      <div><b>G</b> street race</div>
+      <div><b>P</b> pause</div>
     </div>
-    <div id="start-controls">
-      <span><b>WASD</b> move / drive</span><span><b>E</b> enter / exit car</span>
-      <span><b>F</b> punch / shoot</span><span><b>Shift</b> sprint</span>
-      <span><b>Space</b> handbrake</span><span><b>R</b> radio</span><span><b>P</b> pause</span>
-    </div>
-    <div id="start-credits">An original game: the city of Teluk Kirana, its people and its stories are invented.</div>
   </div>
 </div>
 
-<!-- Pause -->
-<div id="pause-screen" class="overlay hidden">
-  <div class="panel">
+<!-- Pause screen -->
+<div id="pauseScreen">
+  <div class="panel small">
     <h2>PAUSED</h2>
-    <p id="pause-stats"></p>
-    <button id="btn-resume" class="big-btn">RESUME</button>
-    <button id="btn-restart" class="big-btn alt">RESTART SEASON</button>
+    <p>The heat waits for no one. Well, just this once.</p>
+    <button id="resumeBtn">RESUME</button>
   </div>
 </div>
 
-<!-- Busted / wasted / finale -->
-<div id="end-screen" class="overlay hidden">
-  <div class="panel">
-    <h2 id="end-title">BUSTED</h2>
-    <p id="end-text"></p>
-    <button id="btn-end-ok" class="big-btn">CONTINUE</button>
+<!-- Game over screen -->
+<div id="overScreen">
+  <div class="panel small">
+    <h2 id="overTitle">WASTED</h2>
+    <p>You wake up at Kirana General. The city keeps your money's worth in fines.</p>
+    <button id="respawnBtn">LEAVE HOSPITAL</button>
   </div>
 </div>
 
-<p id="sr-status" role="status" aria-live="polite"></p>
 <script type="module" src="./src/main.js"></script>
 </body>
 </html>
