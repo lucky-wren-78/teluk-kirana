@@ -1,230 +1,259 @@
-// police.js — the Teluk Kirana heat: wanted stars, patrol-car pursuit,
-// the spotlight helicopter, roadblocks with spike strips, and the bust meter.
-//
-// Heat is a points pool: crimes add points, staying clean bleeds them off.
-// Stars are read from the pool against WANTED.thresholds, and the response
-// escalates with the stars — more cars, then the helicopter at 3, then
-// roadblocks at 4 and 5.
-
+// The law: a 0-5 wanted level driven by heat. Patrol cars cruise until the
+// heat rises, then chase and ram; a helicopter with a spotlight joins at
+// three stars; at four and five stars roadblocks with spike strips appear
+// ahead of the player and popped tyres slow the getaway car.
 import * as THREE from 'three';
-import { WANTED, ROAD_LINES, CITY } from './config.js';
-import { clamp, distance2d } from './rng.js';
-import { Vehicle } from './vehicles.js';
+import { CONFIG } from './config.js';
+import { collideCircle } from './city.js';
+import { damagePlayer } from './player.js';
 
 function buildHelicopter() {
-  const heli = new THREE.Group();
-  const bodyMat = new THREE.MeshLambertMaterial({ color: 0xe8e8e8 });
-  const body = new THREE.Mesh(new THREE.BoxGeometry(4.6, 1.9, 2.1), bodyMat);
-  body.position.y = 0;
-  heli.add(body);
-  const stripe = new THREE.Mesh(new THREE.BoxGeometry(4.65, 0.5, 2.15), new THREE.MeshLambertMaterial({ color: 0x2244cc }));
-  heli.add(stripe);
-  const tail = new THREE.Mesh(new THREE.BoxGeometry(4.2, 0.5, 0.5), bodyMat);
-  tail.position.set(-4.2, 0.4, 0);
-  heli.add(tail);
-  const rotor = new THREE.Mesh(new THREE.BoxGeometry(10.5, 0.08, 0.7), new THREE.MeshLambertMaterial({ color: 0x222222 }));
-  rotor.position.y = 1.25;
-  heli.add(rotor);
-  heli.userData.rotor = rotor;
-  // Searchlight: a real spotlight plus a translucent cone so the beam reads
-  // on camera at dusk.
-  const beam = new THREE.Mesh(
-    new THREE.ConeGeometry(7.5, 30, 18, 1, true),
-    new THREE.MeshBasicMaterial({ color: 0xfff2b0, transparent: true, opacity: 0.16, side: THREE.DoubleSide, depthWrite: false })
+  const g = new THREE.Group();
+  const bodyMat = new THREE.MeshLambertMaterial({ color: 0x1a2f4a });
+  const body = new THREE.Mesh(new THREE.BoxGeometry(3.2, 1.6, 6), bodyMat);
+  g.add(body);
+  const tail = new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.7, 5), bodyMat);
+  tail.position.set(0, 0.3, -5); g.add(tail);
+  const rotorMat = new THREE.MeshBasicMaterial({ color: 0x222222 });
+  const rotor = new THREE.Mesh(new THREE.BoxGeometry(11, 0.12, 0.5), rotorMat);
+  rotor.position.y = 1.1; g.add(rotor);
+  g.userData.rotor = rotor;
+  const spot = new THREE.SpotLight(0xfff2b0, 1500, CONFIG.police.spotlightRange, 0.35, 0.5, 1.2);
+  spot.position.set(0, -0.8, 0);
+  g.add(spot);
+  g.userData.spot = spot;
+  const cone = new THREE.Mesh(
+    new THREE.ConeGeometry(7, CONFIG.police.heliHeight, 16, 1, true),
+    new THREE.MeshBasicMaterial({ color: 0xfff2b0, transparent: true, opacity: 0.07, side: THREE.DoubleSide, depthWrite: false }),
   );
-  beam.position.y = -15.5;
-  heli.add(beam);
-  const light = new THREE.SpotLight(0xfff2b0, 0, 90, 0.42, 0.5, 0.6);
-  light.position.set(0, -1, 0);
-  heli.add(light);
-  heli.add(light.target);
-  light.target.position.set(0, -30, 0);
-  heli.userData.light = light;
-  heli.userData.beam = beam;
-  return heli;
+  cone.position.y = -CONFIG.police.heliHeight / 2;
+  cone.rotation.x = Math.PI;
+  g.add(cone);
+  g.userData.cone = cone;
+  return g;
 }
 
-function buildRoadblock(scene, rng, x, z, heading) {
-  const group = new THREE.Group();
-  const cars = [];
-  for (const offset of [-3.4, 3.4]) {
-    const car = new Vehicle(scene, 'police', 0xf0f0f0, x + Math.cos(heading + Math.PI / 2) * offset, z + Math.sin(heading + Math.PI / 2) * offset, heading + Math.PI / 2);
-    car.driver = 'roadblock';
-    cars.push(car);
+function buildRoadblock(scene) {
+  const g = new THREE.Group();
+  const stripeMat = new THREE.MeshLambertMaterial({ color: 0xe67e22 });
+  const whiteMat = new THREE.MeshLambertMaterial({ color: 0xeeeeee });
+  for (let i = -1; i <= 1; i += 1) {
+    const bar = new THREE.Mesh(new THREE.BoxGeometry(3.4, 1.1, 0.5), i % 2 === 0 ? stripeMat : whiteMat);
+    bar.position.set(i * 3.6, 0.55, 0); g.add(bar);
   }
-  // Spike strip: a dark band with pale teeth across the lane.
-  const strip = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.1, 9.5), new THREE.MeshLambertMaterial({ color: 0x1c1c1e }));
-  strip.position.set(x, 0.06, z);
-  strip.rotation.y = -heading;
-  scene.add(strip);
-  group.userData.spiked = false;
-  return { cars, strip, x, z, heading, tripped: false };
+  const spikes = new THREE.Group();
+  const spikeMat = new THREE.MeshLambertMaterial({ color: 0x888888 });
+  for (let i = 0; i < 9; i += 1) {
+    const s = new THREE.Mesh(new THREE.ConeGeometry(0.18, 0.7, 4), spikeMat);
+    s.position.set(-4 + i, 0.35, 0); spikes.add(s);
+  }
+  spikes.position.z = 4;
+  g.add(spikes);
+  g.userData.spikes = spikes;
+  scene.add(g);
+  return g;
 }
 
-export class PoliceSystem {
-  constructor(scene, rng, colliders) {
-    this.scene = scene;
-    this.rng = rng;
-    this.colliders = colliders;
-    this.heat = 0;
-    this.cars = [];
-    this.bustProgress = 0;
-    this.onBusted = null;
-    this.spawnCooldown = 0;
-    this.roadblock = null;
-    this.roadblockCooldown = 0;
-    this.helicopter = buildHelicopter();
-    this.helicopter.visible = false;
-    this.helicopterActive = false;
-    scene.add(this.helicopter);
+export function createPolice(scene, rng, city) {
+  const heli = buildHelicopter();
+  heli.visible = false;
+  scene.add(heli);
+  return {
+    scene, rng, city,
+    wanted: 0, heat: 0, lastCrimeAt: -999,
+    patrol: [], chasers: [], heli, heliOn: false,
+    roadblocks: [], roadblockTimer: 20, sirenOn: false,
+  };
+}
+
+function spawnPoliceCar(world, x, z) {
+  const { police, scene } = world;
+  // Reuse the car builder from vehicles via a fresh group here to avoid a cycle.
+  const g = new THREE.Group();
+  const paint = new THREE.MeshLambertMaterial({ color: 0xdddddd });
+  const body = new THREE.Mesh(new THREE.BoxGeometry(2.1, 0.75, 4.4), paint);
+  body.position.y = 0.65; g.add(body);
+  const cabin = new THREE.Mesh(new THREE.BoxGeometry(1.8, 0.7, 2.2), new THREE.MeshLambertMaterial({ color: 0x111111 }));
+  cabin.position.set(0, 1.35, -0.2); g.add(cabin);
+  const wheelMat = new THREE.MeshLambertMaterial({ color: 0x111111 });
+  const wheelGeo = new THREE.CylinderGeometry(0.42, 0.42, 0.35, 10);
+  wheelGeo.rotateZ(Math.PI / 2);
+  for (const [wx, wz] of [[-1.05, 1.45], [1.05, 1.45], [-1.05, -1.45], [1.05, -1.45]]) {
+    const w = new THREE.Mesh(wheelGeo, wheelMat);
+    w.position.set(wx, 0.42, wz); g.add(w);
   }
+  const bar = new THREE.Mesh(new THREE.BoxGeometry(1.1, 0.22, 0.4), new THREE.MeshBasicMaterial({ color: 0x2244ff }));
+  bar.position.set(0, 1.85, -0.2); g.add(bar);
+  g.position.set(x, 0, z);
+  scene.add(g);
+  const car = {
+    kind: 'police', mesh: g, pos: g.position,
+    heading: 0, speed: 0, driver: 'police', alive: true, tirePopped: false,
+    lightPhase: world.police.rng.range(0, 6),
+  };
+  world.vehicles.list.push(car);
+  return car;
+}
 
-  get stars() {
-    let stars = 0;
-    for (let i = 1; i <= WANTED.maxStars; i++) {
-      if (this.heat >= WANTED.thresholds[i]) stars = i;
-    }
-    return stars;
+export function addHeat(world, amount) {
+  const p = world.police;
+  p.heat = Math.min(100, p.heat + amount);
+  p.lastCrimeAt = world.time;
+  const want = Math.min(5, Math.ceil(p.heat / 20));
+  if (want > p.wanted) {
+    p.wanted = want;
+    world.hud.toast(`Bintang ${want}! Polisi mengejarmu.`);
+    world.audio.siren(true);
   }
+}
 
-  addHeat(amount) {
-    this.heat = clamp(this.heat + amount, 0, WANTED.thresholds[WANTED.maxStars] + 40);
+function ensureChasers(world) {
+  const p = world.police;
+  const want = p.wanted;
+  const target = want === 0 ? 0 : Math.min(2 + want, 6);
+  while (p.chasers.length < target) {
+    const a = p.rng.range(0, Math.PI * 2);
+    const x = world.player.pos.x + Math.sin(a) * 60;
+    const z = world.player.pos.z + Math.cos(a) * 60;
+    const car = spawnPoliceCar(world, x, z);
+    p.chasers.push(car);
   }
-
-  setHeat(amount) { this.heat = amount; }
-
-  clearHeat() {
-    this.heat = 0;
-    this.bustProgress = 0;
+  while (p.chasers.length > target) {
+    const car = p.chasers.pop();
+    car.alive = false;
+    car.mesh.visible = false;
+    const i = world.vehicles.list.indexOf(car);
+    if (i >= 0) world.vehicles.list.splice(i, 1);
   }
+}
 
-  spawnCarNear(playerPos) {
-    const angle = this.rng.range(0, Math.PI * 2);
-    const dist = this.rng.range(55, 80);
-    let x = clamp(playerPos.x + Math.cos(angle) * dist, -CITY.halfSize + 10, CITY.halfSize + 60);
-    let z = clamp(playerPos.z + Math.sin(angle) * dist, -CITY.halfSize + 10, CITY.halfSize - 10);
-    // Snap to the nearest road line so spawns arrive on asphalt.
-    const snap = (v) => ROAD_LINES.reduce((a, b) => (Math.abs(b - v) < Math.abs(a - v) ? b : a));
-    if (Math.abs(snap(x) - x) < Math.abs(snap(z) - z)) x = snap(x); else z = snap(z);
-    const car = new Vehicle(this.scene, 'police', 0xf0f0f0, x, z, this.rng.range(0, Math.PI * 2));
-    car.driver = 'police';
-    this.cars.push(car);
-    return car;
-  }
-
-  removeCar(car) {
-    this.scene.remove(car.mesh);
-    this.cars.splice(this.cars.indexOf(car), 1);
-  }
-
-  clearRoadblock() {
-    if (!this.roadblock) return;
-    for (const car of this.roadblock.cars) this.scene.remove(car.mesh);
-    this.scene.remove(this.roadblock.strip);
-    this.roadblock = null;
-  }
-
-  update(dt, player) {
-    // player: { pos, vehicle (or null), speed }
-    const stars = this.stars;
-    if (stars === 0) {
-      // Nobody is looking: units drift away and despawn.
-      for (const car of [...this.cars]) {
-        car.drive(dt, 0.2, 0, this.colliders);
-        if (distance2d(car.pos.x, car.pos.z, player.pos.x, player.pos.z) > 60) this.removeCar(car);
+function updateChasers(world, dt) {
+  const p = world.police;
+  for (const car of p.chasers) {
+    const dx = world.player.pos.x - car.pos.x;
+    const dz = world.player.pos.z - car.pos.z;
+    const dist = Math.hypot(dx, dz);
+    const want = Math.atan2(dx, dz);
+    let dh = want - car.heading;
+    while (dh > Math.PI) dh -= Math.PI * 2;
+    while (dh < -Math.PI) dh += Math.PI * 2;
+    car.heading += Math.max(-1.6, Math.min(1.6, dh * 2)) * dt * Math.min(1, Math.abs(car.speed) / 10 + 0.3);
+    const target = dist > 30 ? CONFIG.police.chaseSpeed : CONFIG.police.chaseSpeed * 0.7;
+    car.speed += (target - car.speed) * Math.min(1, dt * 0.8);
+    const nx = car.pos.x + Math.sin(car.heading) * car.speed * dt;
+    const nz = car.pos.z + Math.cos(car.heading) * car.speed * dt;
+    const res = collideCircle(world.city, nx, nz, 2.2);
+    car.pos.x = res.x; car.pos.z = res.z;
+    car.mesh.rotation.y = car.heading;
+    car.lightPhase += dt * 10;
+    car.mesh.children.forEach((c) => {
+      if (c.geometry && c.geometry.type === 'BoxGeometry' && c.position.y > 1.8) {
+        c.material.color.setHex(Math.sin(car.lightPhase) > 0 ? 0x2244ff : 0xff2222);
       }
-      if (this.helicopterActive) { this.helicopterActive = false; this.helicopter.visible = false; }
-      this.clearRoadblock();
-      this.bustProgress = 0;
-      return;
-    }
-    this.heat = Math.max(WANTED.thresholds[stars], this.heat - WANTED.decayPerSecond * dt * 0.25);
-
-    // Maintain the fleet size for the current star level.
-    this.spawnCooldown -= dt;
-    const wanted = WANTED.policeCarsByStars[stars];
-    if (this.cars.length < wanted && this.spawnCooldown <= 0) {
-      this.spawnCarNear(player.pos);
-      this.spawnCooldown = 1.6;
-    }
-    for (const car of [...this.cars]) {
-      const d = distance2d(car.pos.x, car.pos.z, player.pos.x, player.pos.z);
-      if (d > 190) { this.removeCar(car); continue; }
-      // Pursuit steering: aim at a point a little ahead of the target.
-      const lead = clamp(player.speed * 0.35, -6, 10);
-      const tx = player.pos.x + Math.cos(player.heading || 0) * lead;
-      const tz = player.pos.z + Math.sin(player.heading || 0) * lead;
-      const desired = Math.atan2(tz - car.pos.z, tx - car.pos.x);
-      let delta = desired - car.heading;
-      while (delta > Math.PI) delta -= Math.PI * 2;
-      while (delta < -Math.PI) delta += Math.PI * 2;
-      const steer = clamp(delta * 1.9, -1, 1);
-      const throttle = d > 7 ? 1 : d > 3.5 ? 0.35 : -0.25;
-      car.drive(dt, throttle, steer, this.colliders);
-    }
-
-    // Helicopter joins at three stars.
-    const wantHeli = stars >= WANTED.helicopterFromStars;
-    if (wantHeli && !this.helicopterActive) { this.helicopterActive = true; this.helicopter.visible = true; }
-    if (!wantHeli && this.helicopterActive) { this.helicopterActive = false; this.helicopter.visible = false; }
-    if (this.helicopterActive) {
-      const h = this.helicopter;
-      const orbit = performance.now() / 2600;
-      h.position.set(
-        player.pos.x + Math.cos(orbit) * 15,
-        26 + Math.sin(performance.now() / 900) * 1.5,
-        player.pos.z + Math.sin(orbit) * 15
-      );
-      h.rotation.y = -orbit - Math.PI / 2;
-      h.userData.rotor.rotation.y += dt * 28;
-      h.userData.light.intensity = 2600;
-      h.userData.light.target.position.set(player.pos.x - h.position.x, -30, player.pos.z - h.position.z);
-    }
-
-    // Roadblocks at four and five stars, thrown across the player's road.
-    this.roadblockCooldown -= dt;
-    if (stars >= WANTED.roadblockFromStars && !this.roadblock && this.roadblockCooldown <= 0) {
-      const heading = player.heading || 0;
-      const bx = player.pos.x + Math.cos(heading) * 52;
-      const bz = player.pos.z + Math.sin(heading) * 52;
-      if (Math.abs(bx) < CITY.halfSize && Math.abs(bz) < CITY.halfSize) {
-        this.roadblock = buildRoadblock(this.scene, this.rng, bx, bz, heading);
+    });
+    // Ram the player: on foot it hurts, in a car it shoves.
+    if (dist < CONFIG.police.ramDistance) {
+      if (world.player.inVehicle) {
+        const veh = world.vehicles.playerVehicle;
+        veh.speed *= 0.6;
+        world.events.push({ type: 'crash', at: car.pos.clone() });
+      } else {
+        damagePlayer(world, 12, 'police');
+        car.speed *= -0.4;
       }
-      this.roadblockCooldown = 14;
-    }
-    if (this.roadblock) {
-      const rb = this.roadblock;
-      const d = distance2d(player.pos.x, player.pos.z, rb.x, rb.z);
-      if (player.vehicle && !rb.tripped && d < 4.6) {
-        rb.tripped = true;
-        player.vehicle.spikeSlowTimer = 4.5;
-        player.vehicle.speed *= 0.4;
-      }
-      if (d > 120) this.clearRoadblock();
-    }
-
-    // Bust meter: a cop close to a slow or on-foot player fills it.
-    let nearestCop = Infinity;
-    for (const car of this.cars) {
-      nearestCop = Math.min(nearestCop, distance2d(car.pos.x, car.pos.z, player.pos.x, player.pos.z));
-    }
-    const vulnerable = !player.vehicle || Math.abs(player.speed) < 1.2;
-    if (vulnerable && nearestCop < (player.vehicle ? 5.5 : WANTED.bustDistance + 1.6)) {
-      this.bustProgress += dt / WANTED.bustSeconds;
-      if (this.bustProgress >= 1) {
-        this.bustProgress = 0;
-        if (this.onBusted) this.onBusted();
-      }
-    } else {
-      this.bustProgress = Math.max(0, this.bustProgress - dt * 0.7);
     }
   }
+}
 
-  // Positions for the minimap: police cars and the helicopter.
-  blips() {
-    const out = this.cars.map((c) => ({ x: c.pos.x, z: c.pos.z, kind: 'police' }));
-    if (this.roadblock) for (const c of this.roadblock.cars) out.push({ x: c.pos.x, z: c.pos.z, kind: 'police' });
-    if (this.helicopterActive) out.push({ x: this.helicopter.position.x, z: this.helicopter.position.z, kind: 'heli' });
-    return out;
+function updateHelicopter(world, dt) {
+  const p = world.police;
+  const want = p.wanted >= 3;
+  if (want && !p.heliOn) {
+    p.heliOn = true;
+    p.heli.visible = true;
+    world.hud.toast('Helikopter polisi di atasmu!');
+  } else if (!want && p.heliOn) {
+    p.heliOn = false;
+    p.heli.visible = false;
   }
+  if (!p.heliOn) return;
+  const target = world.player.pos;
+  const orbit = world.time * 0.25;
+  const hx = target.x + Math.sin(orbit) * 26;
+  const hz = target.z + Math.cos(orbit) * 26;
+  p.heli.position.x += (hx - p.heli.position.x) * Math.min(1, dt * 1.2);
+  p.heli.position.z += (hz - p.heli.position.z) * Math.min(1, dt * 1.2);
+  p.heli.position.y = CONFIG.police.heliHeight;
+  p.heli.rotation.y = Math.atan2(target.x - p.heli.position.x, target.z - p.heli.position.z);
+  p.heli.userData.rotor.rotation.y += dt * 22;
+  p.heli.userData.spot.target.position.set(target.x - p.heli.position.x, -CONFIG.police.heliHeight, target.z - p.heli.position.z);
+  p.heli.userData.spot.target.updateMatrixWorld();
+}
+
+function placeRoadblock(world) {
+  const p = world.police;
+  const heading = world.player.heading;
+  const fx = Math.sin(heading), fz = Math.cos(heading);
+  const px = world.player.pos.x + fx * 55;
+  const pz = world.player.pos.z + fz * 55;
+  const g = buildRoadblock(world.scene);
+  g.position.set(px, 0, pz);
+  g.rotation.y = heading + Math.PI / 2;
+  p.roadblocks.push({ mesh: g, spikes: g.userData.spikes, hit: false });
+  if (p.roadblocks.length > 3) {
+    const old = p.roadblocks.shift();
+    world.scene.remove(old.mesh);
+  }
+  world.hud.toast('Roadblock di depan! Ada spike strip.');
+}
+
+function updateRoadblocks(world, dt) {
+  const p = world.police;
+  p.roadblockTimer -= dt;
+  if (p.wanted >= CONFIG.police.roadblockAtStars && p.roadblockTimer <= 0) {
+    placeRoadblock(world);
+    p.roadblockTimer = 26;
+  }
+  const veh = world.vehicles.playerVehicle;
+  for (const rb of p.roadblocks) {
+    if (rb.hit || !veh || !world.player.inVehicle) continue;
+    const d = Math.hypot(veh.pos.x - rb.mesh.position.x, veh.pos.z - rb.mesh.position.z);
+    if (d < 5) {
+      rb.hit = true;
+      veh.tirePopped = true;
+      veh.speed *= CONFIG.police.spikeSlow;
+      world.hud.toast('Ban kena spike strip! Mobil melambat.');
+      world.audio.blip();
+      setTimeout(() => { veh.tirePopped = false; }, 9000);
+    }
+  }
+}
+
+export function updatePolice(world, dt) {
+  const p = world.police;
+  // Heat decays after a quiet spell; the wanted level follows it down.
+  if (world.time - p.lastCrimeAt > CONFIG.police.heatDecayDelaySec && p.heat > 0) {
+    p.heat = Math.max(0, p.heat - CONFIG.police.heatDecayPerSec * dt);
+    const want = Math.ceil(p.heat / 20);
+    if (want < p.wanted) {
+      p.wanted = want;
+      if (want === 0) {
+        world.hud.toast('Kamu lolos dari kejaran.');
+        world.audio.siren(false);
+      }
+    }
+  }
+  ensureChasers(world);
+  updateChasers(world, dt);
+  updateHelicopter(world, dt);
+  updateRoadblocks(world, dt);
+}
+
+export function setWanted(world, level) {
+  const p = world.police;
+  p.wanted = level;
+  p.heat = level * 20;
+  p.lastCrimeAt = world.time;
+  if (level > 0) world.audio.siren(true);
+  else world.audio.siren(false);
 }

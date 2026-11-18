@@ -1,56 +1,54 @@
+![gta6-01](https://make.fun/badge/gta6-01.svg)
+![Teluk Kirana rank](https://make.fun/badge/gta6-01/lucky-wren-78/teluk-kirana/rank.svg)
+![Teluk Kirana reward](https://make.fun/badge/gta6-01/lucky-wren-78/teluk-kirana/reward.svg)
+
 # Teluk Kirana: Heat Season
 
-![Bounty](https://make.fun/badge/gta6-01.svg)
-![Rank](https://make.fun/badge/gta6-01/lucky-wren-78/teluk-kirana/rank.svg)
-![Reward](https://make.fun/badge/gta6-01/lucky-wren-78/teluk-kirana/reward.svg)
+An open-world crime game in a procedural tropical port city, built for the
+[make.fun gta6-01 competition](https://make.fun/c/gta6-01/). Explore five
+districts on foot, by car, or by motorbike; take story jobs from Pak Darma,
+Raka and Bu Lastri; dodge a five-star police force with a helicopter,
+roadblocks and spike strips.
 
-An offline, open-world 3D crime game set in Teluk Kirana, a fictional tropical
-port city, built with three.js and plain ES modules — no build step, no network
-requests, everything vendored under `game/`. Entry for the make.fun bounty
-[gta6-01](https://make.fun/bounty/gta6-01).
+## Play
 
-You are Kirana "Kira" Larasati, a harbour courier who owes money to the wrong
-people. Work eight story jobs across five districts, run taxi fares and street
-races on the side, and try to keep the Teluk Kirana police — patrol cars, a
-spotlight helicopter, and roadblocks — off your tail.
+```sh
+node serve.ts
+# open http://localhost:8080
+```
+
+WASD move / drive · Mouse look · Click shoot · E enter / exit vehicle ·
+R reload · Q radio · J start job · T taxi fares · G street race · P pause ·
+M mute. Progress saves to localStorage; the start screen offers Continue.
 
 ## The city
 
-- **5 districts** on a procedural road grid: Pelabuhan (harbour, pier and moored
-  boats), Pasar (market), Bukit (hill residences), Pantai (beachfront), Kota Tua
-  (old town) — canvas-generated building facades, palm trees, street lamps.
-- **Dynamic day–night cycle**: the sun arcs across the sky, dusk turns the sky
-  burnt orange, and street lamps plus vehicle headlights switch on after dark.
-- **Passing rain showers**: rain particles, darker wet roads, and a moodier sky
-  roll in and out on their own schedule.
+- **5 districts**: Pelabuhan (harbour, cranes, docks, boats), Pasar Ikan
+  (market stalls), Pusat Kota (downtown towers), Perumahan, Pinggiran.
+- **Traffic AI** on road loops, pedestrians on the sidewalks, carjacking.
+- **5-star wanted system**: patrols, chases, helicopter spotlight from 3
+  stars, roadblocks + spike strips at 4–5 stars.
+- **8 story jobs** with dialogue and a beacon objective, plus taxi fares
+  and a timed street race.
+- **Dynamic day–night cycle** (street lamps and headlights after dark) and
+  occasional **rain showers** with sound.
+- **3 synth radio stations** + WebAudio SFX (engine, gunshots, sirens, rain).
 
-## What you can do
+## Tech
 
-- Walk, drive **cars and motorbikes** (bikes lean into corners and thread
-  traffic), and **carjack** any vehicle you can reach.
-- **AI traffic** loops the blocks; **pedestrians** stroll the sidewalks and
-  scatter when trouble starts near them.
-- **Wanted system, 1–5 stars**: patrol cars pursue, a **helicopter with a
-  searchlight** joins at 3 stars, and **roadblocks with spike strips** appear
-  at 4–5 stars. Pistol combat with health, cash and respect economy.
-- **8 story jobs** with dialogue (a harbourmaster, a market trader, a mechanic,
-  and more), plus repeatable **taxi** fares and **street races**.
-- **HUD** with a real-time canvas **minimap**, wanted stars, dialogue box and
-  notifications; **3 synth radio stations** plus sound effects (WebAudio, no
-  audio files); progress **saved to localStorage**.
+three.js r160 (vendored as `game/vendor/three.module.min.js`), plain ES
+modules, no build step, no network at runtime — everything runs offline
+from static files.
 
-## Controls
+## Screenshots
 
-WASD / arrows to move or drive · Shift to sprint · E to enter/exit or jack a
-vehicle · F or click to shoot · Space to brake · 1/2/3 for radio stations ·
-Enter to advance dialogue · M for the minimap legend.
+Rendered by `node shoot.mjs` from `shots.json`:
 
-## Run it
+1. `1-night-chase.jpg` — night rain chase in the harbour, 4 stars, helicopter overhead
+2. `2-market.jpg` — morning in the fish market, on foot
+3. `3-rain-harbor.jpg` — rain over the harbour cranes, on the motorbike
+4. `4-dawn.jpg` — dawn in downtown, on foot
 
-```sh
-node serve.ts          # then open the printed local address
-node main.ts           # grader entry: copies game/ + screenshots/ to /output and writes dossier.json
-node shoot.mjs         # regenerate the four screenshots from shots.json
-```
+## License
 
-Deterministic screenshot scenes are staged with `?shot=cover|city|foot|harbor&seed=<n>`.
+MIT — see [LICENSE](LICENSE).

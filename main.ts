@@ -1,49 +1,49 @@
-// Teluk Kirana: Heat Season — handover program (Node 22, standard library only).
+// Teluk Kirana v4 — entrypoint for make.fun gta6-01 (Node 22, stdlib only).
+// Hands the game in: copies game/ and screenshots/ beside this file into
+// /output (or $MAKEFUN_OUTPUT_DIR outside the grader) and writes the
+// dossier.json the judge reads, built with the kit's vendored library.
+// Deterministic: same inputs, byte-identical dossier on every run.
 //
-// What this file does, in plain words: it takes the finished game that lives in
-// the game/ folder next to it, plus the four screenshots in screenshots/, copies
-// both into the output directory, and then asks the vendored make.fun library to
-// summarise that output into dossier.json — the single document the judges read.
-//
-// Two promises this plumbing keeps:
-//   1. Determinism. Nothing here consults the clock or a random source, so two
-//      runs over the same tree produce byte-identical dossier.json files.
-//   2. Early refusal. The caps handed to buildDossier mirror the competition
-//      gate, so an entry the scorer would reject fails here first, loudly.
-//
-// Run it the way the grader does (writes to /output), or locally with:
 //   mkdir -p out && MAKEFUN_OUTPUT_DIR=out node main.ts
+//   node serve.ts            # play it at http://localhost:8080
+//   node shoot.mjs           # re-render the four screenshots
 
-import { cpSync, existsSync, mkdirSync, writeFileSync } from 'node:fs';
+import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { buildDossier } from './vendor/makefun-game.ts';
 
-// Resolve everything relative to this file, never to the caller's cwd, so the
-// program behaves identically no matter where it is launched from.
-const entryDir = fileURLToPath(new URL('.', import.meta.url));
-const outputDir = process.env.MAKEFUN_OUTPUT_DIR ?? '/output';
+const here = fileURLToPath(new URL('.', import.meta.url));
+const out = process.env.MAKEFUN_OUTPUT_DIR ?? '/output';
 
-// Stage the payload: game tree first, then the screenshot set beside it.
-mkdirSync(outputDir, { recursive: true });
-cpSync(join(entryDir, 'game'), join(outputDir, 'game'), { recursive: true });
-mkdirSync(join(outputDir, 'screenshots'), { recursive: true });
-if (existsSync(join(entryDir, 'screenshots'))) {
-  cpSync(join(entryDir, 'screenshots'), join(outputDir, 'screenshots'), { recursive: true });
+// The four screenshots the dossier covers: exactly the shots.json list.
+const shotNames = JSON.parse(readFileSync(join(here, 'shots.json'), 'utf8')).map((s) => s.name);
+for (const name of shotNames) {
+  const p = join(here, 'screenshots', name);
+  if (!existsSync(p) || !statSync(p).isFile()) throw new Error(`missing screenshot: screenshots/${name}`);
+  if (statSync(p).size > 262144) throw new Error(`screenshot over 256 KiB: screenshots/${name}`);
 }
 
-// Gate numbers for gta6-01, spelled out once so a future edit touches one place:
-// the dossier text budget, at most four screenshots of at most 256 KiB each, and
-// a game tree of at most 993 files / 48 MiB with no path longer than 1000 bytes.
-const GATE_CAPS = {
-  text_max_bytes: 163840,
-  screenshots: { max: 4, max_bytes: 262144 },
-  game_max_files: 993,
-  game_max_bytes: 50331648,
-  game_path_max_bytes: 1000,
-} as const;
+mkdirSync(out, { recursive: true });
+cpSync(join(here, 'game'), join(out, 'game'), { recursive: true });
+mkdirSync(join(out, 'screenshots'), { recursive: true });
+if (existsSync(join(here, 'screenshots'))) {
+  cpSync(join(here, 'screenshots'), join(out, 'screenshots'), { recursive: true });
+}
 
-const dossierBytes = buildDossier(outputDir, GATE_CAPS);
-writeFileSync(join(outputDir, 'dossier.json'), dossierBytes);
+// The scorer's own caps (reference/gate.json): only text_max_bytes shapes
+// the bytes; the rest refuse an entry the scorer would refuse.
+writeFileSync(
+  join(out, 'dossier.json'),
+  buildDossier(out, {
+    text_max_bytes: 163840,
+    screenshots: { max: 4, max_bytes: 262144 },
+    game_max_files: 993,
+    game_max_bytes: 50331648,
+    game_path_max_bytes: 1000,
+  }),
+);
 
-console.log(`Teluk Kirana handed in: dossier.json is ${dossierBytes.length} bytes in ${outputDir}`);
+const dossierBytes = statSync(join(out, 'dossier.json')).size;
+const gameFiles = readdirSync(join(out, 'game'), { recursive: true }).length;
+console.log(`dossier.json: ${dossierBytes} bytes, game/ entries: ${gameFiles}, screenshots: ${shotNames.length}`);

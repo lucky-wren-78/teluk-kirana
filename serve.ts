@@ -1,73 +1,74 @@
-// Teluk Kirana — pocket static server for local play-testing.
-//
-// `node serve.ts` (optionally `--port 8123`) serves the game/ folder on
-// 127.0.0.1 so the entry can be played and screenshotted without any build
-// step or network access. It is deliberately boring: correct MIME types for
-// the file kinds a browser game ships, a hard refusal for any path that tries
-// to climb out of game/, and no caching so edits show up on reload.
-
+// A tiny static server for game/ (Node 22, standard library only), so the
+// entry can be played locally without a build step:
+//   node serve.ts [--port 8080]
+// Serves game/ at http://localhost:8080. It sends the MIME types a browser
+// game needs, refuses any path outside game/, and does nothing else: a
+// development convenience, not a web server for the internet.
 import { createReadStream, statSync } from 'node:fs';
 import { createServer } from 'node:http';
 import { extname, join, normalize, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const gameRoot = resolve(fileURLToPath(new URL('./game', import.meta.url)));
+const root = resolve(fileURLToPath(new URL('./game', import.meta.url)));
+const args = process.argv.slice(2);
+const portIndex = args.indexOf('--port');
+const requested = portIndex === -1 ? 8080 : Number(args[portIndex + 1]);
+const port = Number.isInteger(requested) && requested > 0 && requested < 65536 ? requested : 8080;
 
-const argv = process.argv.slice(2);
-const portFlagAt = argv.indexOf('--port');
-const wantedPort = portFlagAt === -1 ? 8080 : Number(argv[portFlagAt + 1]);
-const listenPort = Number.isInteger(wantedPort) && wantedPort > 0 && wantedPort < 65536 ? wantedPort : 8080;
-
-const CONTENT_TYPES: Record<string, string> = {
+const MIME = {
   '.html': 'text/html; charset=utf-8',
-  '.css': 'text/css; charset=utf-8',
   '.js': 'text/javascript; charset=utf-8',
   '.mjs': 'text/javascript; charset=utf-8',
+  '.css': 'text/css; charset=utf-8',
   '.json': 'application/json; charset=utf-8',
+  '.png': 'image/png',
   '.jpg': 'image/jpeg',
   '.jpeg': 'image/jpeg',
-  '.png': 'image/png',
+  '.gif': 'image/gif',
+  '.webp': 'image/webp',
   '.svg': 'image/svg+xml',
   '.ico': 'image/x-icon',
-  '.wasm': 'application/wasm',
+  '.woff2': 'font/woff2',
+  '.glb': 'model/gltf-binary',
+  '.gltf': 'model/gltf+json',
   '.bin': 'application/octet-stream',
+  '.wasm': 'application/wasm',
+  '.wav': 'audio/wav',
+  '.mp3': 'audio/mpeg',
+  '.ogg': 'audio/ogg',
+  '.txt': 'text/plain; charset=utf-8',
 };
 
-const server = createServer((request, response) => {
-  let decodedPath: string;
+createServer((request, response) => {
+  const url = new URL(request.url ?? '/', 'http://localhost');
+  let pathname;
   try {
-    decodedPath = decodeURIComponent(new URL(request.url ?? '/', 'http://127.0.0.1').pathname);
+    pathname = decodeURIComponent(url.pathname);
   } catch {
-    response.writeHead(400).end('malformed path');
+    response.writeHead(400).end('bad request');
     return;
   }
-  if (decodedPath.endsWith('/')) decodedPath += 'index.html';
-
-  const targetFile = resolve(join(gameRoot, normalize(decodedPath)));
-  const insideGame = targetFile === gameRoot || targetFile.startsWith(gameRoot + sep);
-  if (!insideGame) {
-    response.writeHead(403).end('outside the game folder');
+  if (pathname.endsWith('/')) pathname += 'index.html';
+  const file = resolve(join(root, normalize(pathname)));
+  if (file !== root && !file.startsWith(root + sep)) {
+    response.writeHead(403).end('forbidden');
     return;
   }
-
-  let byteSize: number;
+  let size;
   try {
-    const info = statSync(targetFile);
-    if (!info.isFile()) throw new Error('directory, not a file');
-    byteSize = info.size;
+    const stats = statSync(file);
+    if (!stats.isFile()) throw new Error('not a file');
+    size = stats.size;
   } catch {
-    response.writeHead(404).end('no such file');
+    response.writeHead(404).end('not found');
     return;
   }
-
   response.writeHead(200, {
-    'content-type': CONTENT_TYPES[extname(targetFile).toLowerCase()] ?? 'application/octet-stream',
-    'content-length': byteSize,
+    'content-type': MIME[extname(file).toLowerCase()] ?? 'application/octet-stream',
+    'content-length': size,
     'cache-control': 'no-store',
   });
-  createReadStream(targetFile).pipe(response);
-});
-
-server.listen(listenPort, '127.0.0.1', () => {
-  console.log(`Teluk Kirana game/ serving at http://127.0.0.1:${listenPort}`);
+  createReadStream(file).pipe(response);
+}).listen(port, '127.0.0.1', () => {
+  console.log(`Teluk Kirana game/ is on http://localhost:${port}`);
 });

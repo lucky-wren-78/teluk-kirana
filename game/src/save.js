@@ -1,42 +1,55 @@
-// save.js — localStorage persistence: cash, respect, story progress,
-// and where Kira was standing, so a reload continues the season.
+// Save / load through localStorage: cash, job progress, health, position
+// and the best (highest) cash reached. Loading never throws.
+import { CONFIG } from './config.js';
 
-import { SAVE_KEY, PLAYER } from './config.js';
-
-export function loadSave() {
+export function saveGame(world) {
   try {
-    const raw = localStorage.getItem(SAVE_KEY);
-    if (!raw) return null;
-    const data = JSON.parse(raw);
-    if (typeof data !== 'object' || data === null) return null;
-    return data;
+    const data = {
+      version: 4,
+      cash: world.player.cash,
+      health: world.player.health,
+      ammo: world.player.ammo,
+      jobIndex: world.jobs.index,
+      completedJobs: world.jobs.completedCount,
+      pos: [world.player.pos.x, world.player.pos.z],
+      timeOfDay: world.timeOfDay,
+      savedAt: Date.now(),
+    };
+    window.localStorage.setItem(CONFIG.saveKey, JSON.stringify(data));
+    const best = Number(window.localStorage.getItem(CONFIG.bestKey) || 0);
+    if (world.player.cash > best) window.localStorage.setItem(CONFIG.bestKey, String(world.player.cash));
+    return true;
   } catch {
-    return null; // private mode or a corrupt blob: start fresh, never crash
+    return false;
   }
 }
 
-export function storeSave(state) {
+export function loadGame() {
   try {
-    localStorage.setItem(SAVE_KEY, JSON.stringify({
-      cash: Math.round(state.cash),
-      respect: Math.round(state.respect),
-      storyIndex: state.jobs.storyIndex,
-      completedStory: state.jobs.completedStory,
-      position: { x: Math.round(state.position.x * 10) / 10, z: Math.round(state.position.z * 10) / 10 },
-      hour: state.hour,
-    }));
-  } catch { /* storage full or blocked: the game simply will not persist */ }
+    const raw = window.localStorage.getItem(CONFIG.saveKey);
+    if (!raw) return null;
+    const data = JSON.parse(raw);
+    if (!data || data.version !== 4) return null;
+    return data;
+  } catch {
+    return null;
+  }
 }
 
-export function wipeSave() {
-  try { localStorage.removeItem(SAVE_KEY); } catch { /* nothing to wipe */ }
+export function readBest() {
+  try {
+    return Number(window.localStorage.getItem(CONFIG.bestKey) || 0);
+  } catch {
+    return 0;
+  }
 }
 
-export function freshState() {
-  return {
-    cash: PLAYER.startCash,
-    respect: 0,
-    position: { ...PLAYER.startPosition },
-    hour: null,
-  };
+export function applySave(world, data) {
+  world.player.cash = data.cash;
+  world.player.health = data.health;
+  world.player.ammo = data.ammo;
+  world.jobs.index = data.jobIndex;
+  world.jobs.completedCount = data.completedJobs;
+  world.player.pos.set(data.pos[0], 0, data.pos[1]);
+  world.timeOfDay = data.timeOfDay;
 }

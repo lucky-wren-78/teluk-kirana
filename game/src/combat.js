@@ -1,87 +1,79 @@
-// combat.js — Kira's pistol: hitscan shots with a tracer flash, muzzle
-// light, damage to vehicles and pedestrians, and the heat a gunshot draws.
-
+// Combat: a pistol with raycast hits, muzzle flash, ammo and reload.
+// Shooting in public raises the heat; killing a pedestrian raises it more.
 import * as THREE from 'three';
-import { WANTED } from './config.js';
-import { distance2d } from './rng.js';
+import { CONFIG } from './config.js';
+import { fleeFrom } from './pedestrians.js';
 
-export class Combat {
-  constructor(scene, hooks) {
-    this.scene = scene;
-    this.hooks = hooks; // { onShotFired(x,z), onCrime(kind,x,z), onVehicleHit(v), onPedestrianDown(x,z) }
-    this.cooldown = 0;
-    this.ammo = Infinity; // a harbour courier's pistol never runs dry in this cut
-    this.tracers = [];
-    this.muzzle = new THREE.PointLight(0xffc37a, 0, 16);
-    scene.add(this.muzzle);
-    this.tracerMat = new THREE.MeshBasicMaterial({ color: 0xffe9a8, transparent: true, opacity: 0.9 });
+export function createCombat(scene, camera) {
+  const flash = new THREE.PointLight(0xffc860, 0, 18, 1.5);
+  scene.add(flash);
+  return {
+    scene, camera, flash,
+    flashTimer: 0, lastShotAt: -999,
+  };
+}
+
+export function tryShoot(world) {
+  const { player, combat, police } = world;
+  if (player.inVehicle || player.dead) return;
+  if (world.time - combat.lastShotAt < CONFIG.combat.fireInterval) return;
+  if (player.ammo <= 0) {
+    world.hud.toast('Peluru habis — tekan R untuk isi ulang.');
+    world.audio.blip();
+    return;
   }
+  combat.lastShotAt = world.time;
+  player.ammo -= 1;
+  world.audio.shot();
+  combat.flashTimer = 0.07;
+  const origin = world.camera.position.clone();
+  const dir = new THREE.Vector3();
+  world.camera.getWorldDirection(dir);
+  combat.flash.position.copy(origin).addScaledVector(dir, 2);
+  const ray = new THREE.Raycaster(origin, dir, 0.1, CONFIG.combat.range);
 
-  // Fire from the player toward their aim heading. Targets: vehicles and
-  // pedestrians within range and a narrow cone; otherwise the shot flies
-  // to max range and kicks up nothing but noise (and heat).
-  tryShoot(dt, shooter) {
-    this.cooldown -= dt;
-    for (const tracer of [...this.tracers]) {
-      tracer.life -= dt;
-      tracer.mesh.material.opacity = Math.max(0, tracer.life * 3);
-      if (tracer.life <= 0) {
-        this.scene.remove(tracer.mesh);
-        this.tracers.splice(this.tracers.indexOf(tracer), 1);
+  const targets = [];
+  for (const w of world.pedestrians.list) {
+    if (w.alive) targets.push({ mesh: w.mesh, ref: w, kind: 'ped' });
+  }
+  for (const car of world.vehicles.list) {
+    if (car.alive && car.driver === 'police') targets.push({ mesh: car.mesh, ref: car, kind: 'police' });
+  }
+  const hits = ray.intersectObjects(targets.map((t) => t.mesh), true);
+  if (hits.length > 0) {
+    let obj = hits[0].object;
+    while (obj.parent && !targets.some((t) => t.mesh === obj)) obj = obj.parent;
+    const t = targets.find((x) => x.mesh === obj);
+    if (t) {
+      if (t.kind === 'ped') {
+        t.ref.alive = false;
+        t.ref.mesh.visible = false;
+        police.addHeat(world, CONFIG.police.heatPerCrime.kill);
+        world.hud.toast('Kamu menembak pejalan kaki!');
+      } else {
+        t.ref.speed = Math.max(0, t.ref.speed - 12);
+        police.addHeat(world, CONFIG.police.heatPerCrime.shoot);
       }
     }
-    this.muzzle.intensity = Math.max(0, this.muzzle.intensity - dt * 260);
+  } else {
+    police.addHeat(world, CONFIG.police.heatPerCrime.shoot * 0.4);
   }
-
-  fire(shooter, targets) {
-    if (this.cooldown > 0) return false;
-    this.cooldown = 0.24;
-    const origin = new THREE.Vector3(shooter.pos.x, 1.35, shooter.pos.z);
-    const dirX = Math.cos(shooter.heading);
-    const dirZ = Math.sin(shooter.heading);
-    this.muzzle.position.copy(origin);
-    this.muzzle.intensity = 60;
-    this.hooks.onShotFired(shooter.pos.x, shooter.pos.z);
-    this.hooks.onCrime('shot', shooter.pos.x, shooter.pos.z);
-
-    let bestDist = 46;
-    let bestHit = null;
-    for (const target of targets) {
-      const dx = target.pos.x - shooter.pos.x;
-      const dz = target.pos.z - shooter.pos.z;
-      const along = dx * dirX + dz * dirZ;
-      if (along < 1 || along > bestDist) continue;
-      const side = -dx * dirZ + dz * dirX;
-      const cone = target.kind === 'pedestrian' ? 0.8 : 1.7;
-      if (Math.abs(side) < cone) { bestDist = along; bestHit = target; }
-    }
-
-    const end = new THREE.Vector3(
-      shooter.pos.x + dirX * bestDist,
-      1.1,
-      shooter.pos.z + dirZ * bestDist
-    );
-    const length = origin.distanceTo(end);
-    const tracerMesh = new THREE.Mesh(new THREE.BoxGeometry(length, 0.045, 0.045), this.tracerMat.clone());
-    tracerMesh.position.copy(origin).lerp(end, 0.5);
-    tracerMesh.rotation.y = -shooter.heading;
-    this.scene.add(tracerMesh);
-    this.tracers.push({ mesh: tracerMesh, life: 0.3 });
-
-    if (bestHit) {
-      if (bestHit.kind === 'pedestrian') this.hooks.onPedestrianDown(bestHit);
-      else this.hooks.onVehicleHit(bestHit.vehicle, bestHit.isPolice);
-    }
-    return true;
-  }
+  fleeFrom(world, player.pos.x, player.pos.z, 40);
 }
 
-// How much damage a single pistol round does to a vehicle.
-export const SHOT_VEHICLE_DAMAGE = 9;
-
-// Crime heat table shortcut used by the game orchestrator.
-export function heatForCrime(kind) {
-  return WANTED.crimeHeat[kind] || 4;
+export function reload(world) {
+  const { player } = world;
+  if (player.ammo === CONFIG.player.maxAmmo) return;
+  player.ammo = CONFIG.player.maxAmmo;
+  world.hud.toast('Peluru diisi ulang.');
+  world.audio.blip();
 }
 
-export { distance2d };
+export function updateCombat(world, dt) {
+  const { combat } = world;
+  if (combat.flashTimer > 0) {
+    combat.flashTimer -= dt;
+    combat.flash.intensity = 60;
+    if (combat.flashTimer <= 0) combat.flash.intensity = 0;
+  }
+}

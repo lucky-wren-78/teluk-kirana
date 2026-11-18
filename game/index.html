@@ -1,64 +1,62 @@
-<!DOCTYPE html>
-<html lang="en">
+<!doctype html>
+<html lang="id">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Teluk Kirana: Heat Season</title>
+<title>Teluk Kirana: Heat Season — Open World Crime</title>
 <link rel="stylesheet" href="./style.css">
 <script type="importmap">
 { "imports": { "three": "./vendor/three.module.min.js" } }
 </script>
 </head>
 <body>
-<canvas id="scene"></canvas>
+<div id="app">
+  <canvas id="game" aria-label="Teluk Kirana: kota pelabuhan tropis 3D. WASD untuk bergerak, E untuk masuk mobil, klik untuk menembak."></canvas>
+  <div id="damage-flash"></div>
+  <div id="crosshair">+</div>
 
-<div id="hud" class="hidden">
-  <div id="topbar">
-    <div id="wanted" aria-label="wanted level"></div>
-    <div id="clockbox"><span id="clock">06:00</span><span id="weather"></span></div>
+  <div id="hud" class="hidden">
+    <div id="top-left">
+      <div id="stars" aria-label="Wanted level">☆☆☆☆☆</div>
+      <div id="health"><div id="health-fill"></div></div>
+      <div id="cash-row"><span id="cash">$250</span><span id="ammo">◉ 12</span></div>
+      <div id="clock-row"><span id="clock">08:00</span><span id="weather">☀ Cerah</span></div>
+    </div>
+    <div id="top-right">
+      <canvas id="minimap" width="180" height="180"></canvas>
+      <div id="radio">KIRANA FM</div>
+    </div>
+    <div id="objective"></div>
+    <div id="dialog" class="hidden"></div>
+    <div id="toast" class="hidden"></div>
+    <div id="prompt" class="hidden"></div>
+    <div id="bottom-right">
+      <div id="speed">0 km/h</div>
+      <div id="controls-hint">WASD jalan/nyetir · E naik/turun · Klik tembak · R isi peluru · Q radio · J job · T taksi · G balapan · P jeda</div>
+    </div>
   </div>
-  <div id="stats">
-    <div id="cash">$0</div>
-    <div id="respect">RESPECT 0</div>
-    <div id="healthbar"><div id="healthfill"></div></div>
-    <div id="joblabel"></div>
-  </div>
-  <canvas id="minimap" width="180" height="180"></canvas>
-  <div id="speedo" class="hidden">0 km/h</div>
-  <div id="radio" class="hidden"></div>
-  <div id="notify"></div>
-  <div id="dialogue" class="hidden">
-    <div id="dlg-name"></div>
-    <div id="dlg-text"></div>
-    <div id="dlg-hint">ENTER ▸</div>
-  </div>
-  <div id="prompt" class="hidden"></div>
-  <div id="crosshair" class="hidden">+</div>
-  <div id="damageflash"></div>
-</div>
 
-<div id="startscreen">
-  <div class="start-inner">
-    <h1>TELUK KIRANA</h1>
-    <h2>HEAT SEASON</h2>
-    <p class="tagline">A tropical port city. Eight jobs. Five stars of trouble.</p>
-    <p class="story">You are Kira Larasati, a harbour courier deep in debt.
-    Work the docks, the market and the hill roads — and outrun the heat.</p>
-    <button id="startbtn" type="button">START ENGINE</button>
-    <p class="controls">WASD move / drive · SHIFT sprint · E enter or jack vehicle ·
-    F shoot · SPACE brake · 1·2·3 radio · ENTER talk</p>
-    <p id="continue-note" class="hidden">Saved game found — starting continues your story.</p>
+  <div id="start-screen">
+    <div class="panel">
+      <h1>TELUK KIRANA</h1>
+      <p class="tagline">Heat Season — kota pelabuhan tropis, 5 distrik, 8 story job</p>
+      <p class="desc">Jelajahi kota dengan berjalan kaki, mobil, atau motor. Bajak kendaraan,
+      kerjakan job untuk Pak Darma, dan hindari polisi 5 bintang — ada helikopter
+      dan roadblock menunggumu di level tinggi.</p>
+      <button id="start-btn">▶ Mulai Bermain</button>
+      <button id="continue-btn" class="hidden">Lanjutkan Save</button>
+      <p class="keys">WASD gerak · Mouse arah kamera · Klik tembak · E naik/turun kendaraan ·
+      R isi peluru · Q ganti radio · J mulai job · T taksi · G street race · P jeda · M mute</p>
+    </div>
   </div>
-</div>
 
-<div id="gameover" class="hidden">
-  <div class="start-inner">
-    <h1 id="gameover-title">BUSTED</h1>
-    <p id="gameover-text"></p>
-    <button id="respawnbtn" type="button">BACK TO THE DOCKS</button>
+  <div id="paused" class="hidden"><div class="panel"><h2>Jeda</h2><p>Tekan P untuk lanjut.</p></div></div>
+  <div id="gameover" class="hidden">
+    <div class="panel"><h2 id="gameover-title">GAME OVER</h2><p id="gameover-text"></p>
+    <button id="retry-btn">Main Lagi</button></div>
   </div>
 </div>
-
+<p id="status" role="status" aria-live="polite"></p>
 <script type="module" src="./src/main.js"></script>
 </body>
 </html>

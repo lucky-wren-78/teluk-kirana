@@ -1,555 +1,412 @@
-// main.js — bootstrap and game loop for Teluk Kirana: Heat Season.
-// Wires every system together: city, traffic, pedestrians, police, combat,
-// jobs, HUD, audio, save — plus the day/night cycle, the rain, and the
-// deterministic ?shot= staging used for the screenshot set.
-
+// Teluk Kirana — boot, the fixed-step loop, day/night + rain, the chase
+// camera, input, and the ?shot= staging used by shoot.mjs. The game runs
+// from plain static files; three.js comes from ./vendor/three.module.min.js.
 import * as THREE from 'three';
-import { CITY, DAY, WANTED, ECONOMY, districtAt } from './config.js';
-import { makeRng, clamp, lerp, distance2d } from './rng.js';
+import { CONFIG, KEYS } from './config.js';
+import { createRng, hashSeed } from './rng.js';
 import { buildCity } from './city.js';
-import { Vehicle, createTraffic, createParkedVehicles } from './vehicles.js';
-import { Player, CameraRig } from './player.js';
-import { PedestrianCrowd } from './pedestrians.js';
-import { PoliceSystem } from './police.js';
-import { Combat, SHOT_VEHICLE_DAMAGE } from './combat.js';
-import { JobManager } from './jobs.js';
-import { Hud } from './hud.js';
-import { GameAudio } from './audio.js';
-import { loadSave, storeSave, freshState } from './save.js';
+import { createVehicles, updateVehicles, enterVehicle, exitVehicle } from './vehicles.js';
+import { createPlayer, updatePlayer } from './player.js';
+import { createPedestrians, updatePedestrians } from './pedestrians.js';
+import { createPolice, updatePolice, addHeat, setWanted } from './police.js';
+import { createJobs, startJob, startTaxi, startRace, currentJobDef, updateJobs } from './jobs.js';
+import { createCombat, tryShoot, reload, updateCombat } from './combat.js';
+import {
+  createAudio, ensureAudio, setEngine, setRain, setSiren,
+  playShot, playBlip, playHorn, cycleRadio, toggleMute,
+} from './audio.js';
+import { createHud } from './hud.js';
+import { saveGame, loadGame, readBest, applySave } from './save.js';
 
-// ---------------------------------------------------------------- setup
-const params = new URLSearchParams(location.search);
+const STEP = 1 / 60;
+const MAX_FRAME = 0.25;
+
+const params = new URLSearchParams(window.location.search);
 const shotName = params.get('shot');
-const seed = params.get('seed') || '7';
-const rng = makeRng(`teluk-kirana-${seed}`);
+const seedParam = Number.parseInt(params.get('seed') ?? '', 10);
+const seed = Number.isInteger(seedParam) ? seedParam : CONFIG.seed;
 
-const canvas = document.getElementById('scene');
+const canvas = document.getElementById('game');
+const statusEl = document.getElementById('status');
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
-renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 renderer.setSize(window.innerWidth, window.innerHeight);
-renderer.outputColorSpace = THREE.SRGBColorSpace;
 
 const scene = new THREE.Scene();
-scene.background = new THREE.Color(0x6fc3e8);
-scene.fog = new THREE.Fog(0x6fc3e8, 120, 420);
+scene.background = new THREE.Color(CONFIG.palette.skyDay);
+scene.fog = new THREE.Fog(CONFIG.palette.fogDay, 140, 720);
+const camera = new THREE.PerspectiveCamera(62, window.innerWidth / window.innerHeight, 0.1, 1200);
 
-const camera = new THREE.PerspectiveCamera(58, window.innerWidth / window.innerHeight, 0.1, 900);
-camera.position.set(150, 6, 60);
-
-const hemi = new THREE.HemisphereLight(0xbfe3ff, 0x51683f, 0.85);
-scene.add(hemi);
 const sun = new THREE.DirectionalLight(0xffffff, 1.6);
+sun.position.set(200, 300, 100);
 scene.add(sun);
-scene.add(sun.target);
+const hemi = new THREE.HemisphereLight(0xbdd8f2, 0x3d3a33, 0.9);
+scene.add(hemi);
+const headlight = new THREE.PointLight(0xffe9a8, 0, 70, 1.4);
+scene.add(headlight);
 
+const rng = createRng(shotName ? hashSeed(shotName) + seed : seed);
+const city = buildCity(scene, rng);
+const player = createPlayer(scene, city);
+const vehicles = createVehicles(scene, rng, city);
+const pedestrians = createPedestrians(scene, rng, city);
+const police = createPolice(scene, rng, city);
+police.addHeat = (w, amount) => addHeat(w, amount);
+const jobs = createJobs(scene);
+const combat = createCombat(scene, camera);
+const audioState = createAudio();
+const audio = {
+  ensure: () => ensureAudio(audioState),
+  shot: () => playShot(audioState),
+  blip: () => playBlip(audioState),
+  horn: () => playHorn(audioState),
+  siren: (on) => setSiren(audioState, on),
+  engine: (kmh, inVeh) => setEngine(audioState, kmh, inVeh),
+  rain: (on) => setRain(audioState, on),
+  cycleRadio: () => cycleRadio(audioState),
+  toggleMute: () => toggleMute(audioState),
+};
+
+const world = {
+  scene, camera, city, player, vehicles, pedestrians, police, jobs, combat,
+  audio, audioState, save: { saveGame: () => saveGame(world) },
+  time: 0, timeOfDay: 8.0, weather: 'clear', rainTimer: 40,
+  wanted: 0, speedKmh: 0, events: [], screen: 'title',
+  camYaw: 0, camPitch: 0.32, camDist: 10,
+};
+world.hud = createHud(world);
+window.__game = world;
+
+function announce(msg) { statusEl.textContent = msg; }
+
+// ---- Day / night + weather ----
+function daylightFactor(t) {
+  // 0 at night, 1 at noon; smooth at dawn (6h) and dusk (18h).
+  const a = ((t - 6) / 12) * Math.PI;
+  return Math.max(0, Math.sin(a));
+}
+
+function updateSky(dt) {
+  world.timeOfDay = (world.timeOfDay + (dt * 24) / CONFIG.dayLengthSec) % 24;
+  const t = world.timeOfDay;
+  const day = daylightFactor(t);
+  const dusk = Math.max(0, 1 - Math.abs(t - 18) / 1.5) + Math.max(0, 1 - Math.abs(t - 6) / 1.5);
+  const sky = new THREE.Color(CONFIG.palette.skyNight).lerp(new THREE.Color(CONFIG.palette.skyDay), day);
+  if (dusk > 0) sky.lerp(new THREE.Color(CONFIG.palette.skyDusk), Math.min(1, dusk) * 0.7);
+  scene.background = sky;
+  scene.fog.color.copy(sky);
+  sun.intensity = 0.35 + day * 1.6;
+  const sunAngle = ((t - 6) / 12) * Math.PI;
+  sun.position.set(Math.cos(sunAngle) * 300, Math.max(30, Math.sin(sunAngle) * 320), 120);
+  hemi.intensity = 0.5 + day * 0.65;
+  // Lamps glow after dark; headlights too.
+  const dark = 1 - day;
+  const glow = city.lampMats[0];
+  glow.color.setHex(dark > 0.35 ? CONFIG.palette.lampGlow : 0x555544);
+  for (const lamp of city.lamps) lamp.visible = dark > 0.3;
+  const inVeh = player.inVehicle;
+  headlight.intensity = dark > 0.35 && inVeh ? 150 : 0;
+  if (inVeh && vehicles.playerVehicle) {
+    const v = vehicles.playerVehicle;
+    headlight.position.set(
+      v.pos.x + Math.sin(v.heading) * 2.4, 1.2, v.pos.z + Math.cos(v.heading) * 2.4,
+    );
+  }
+  // Rain scheduling (not in shot mode: the shot fixes the weather).
+  if (!shotName) {
+    world.rainTimer -= dt;
+    if (world.rainTimer <= 0) {
+      if (world.weather === 'clear') { world.weather = 'rain'; world.rainTimer = CONFIG.rainLastSec; }
+      else { world.weather = 'clear'; world.rainTimer = CONFIG.rainEverySec * (0.7 + rng.next() * 0.6); }
+      audio.rain(world.weather === 'rain');
+    }
+  }
+  updateRain(dt);
+}
+
+function updateRain(dt) {
+  const rain = city.rainPoints;
+  const on = world.weather === 'rain';
+  rain.visible = on;
+  if (!on) return;
+  rain.position.set(player.pos.x, 0, player.pos.z);
+  const pos = rain.geometry.attributes.position;
+  for (let i = 0; i < pos.count; i += 1) {
+    let y = pos.getY(i) - dt * 55;
+    if (y < 0) {
+      y = 40;
+      pos.setX(i, rng.range(-60, 60));
+      pos.setZ(i, rng.range(-60, 60));
+    }
+    pos.setY(i, y);
+  }
+  pos.needsUpdate = true;
+}
+
+// ---- Camera ----
+function updateCamera(dt) {
+  const target = player.pos;
+  let dist = player.inVehicle ? 12 : 8.5;
+  let height = player.inVehicle ? 4.6 : 3.6;
+  if (player.inVehicle && vehicles.playerVehicle && vehicles.playerVehicle.kind === 'bike') {
+    dist = 10; height = 3.8;
+  }
+  const cx = target.x - Math.sin(world.camYaw) * Math.cos(world.camPitch) * dist;
+  const cz = target.z - Math.cos(world.camYaw) * Math.cos(world.camPitch) * dist;
+  const cy = target.y + height + Math.sin(world.camPitch) * dist * 0.6;
+  const want = new THREE.Vector3(cx, cy, cz);
+  camera.position.lerp(want, Math.min(1, dt * 6));
+  camera.lookAt(target.x, target.y + 1.8, target.z);
+  // Keep the camera out of buildings: clamp above ground, pull in if inside one.
+  if (camera.position.y < 1.2) camera.position.y = 1.2;
+}
+
+// ---- Input ----
+const keys = new Set();
+const input = {
+  get forward() { return keys.has(KEYS.forward) || keys.has('ArrowUp'); },
+  get back() { return keys.has(KEYS.back) || keys.has('ArrowDown'); },
+  get left() { return keys.has(KEYS.left); },
+  get right() { return keys.has(KEYS.right); },
+  get run() { return keys.has(KEYS.run); },
+  get handbrake() { return keys.has(KEYS.handbrake); },
+};
+let pointerLocked = false;
+canvas.addEventListener('click', () => {
+  if (world.screen !== 'playing') return;
+  audio.ensure();
+  if (!pointerLocked) canvas.requestPointerLock?.();
+});
+document.addEventListener('pointerlockchange', () => {
+  pointerLocked = document.pointerLockElement === canvas;
+});
+document.addEventListener('mousemove', (e) => {
+  if (!pointerLocked || world.screen !== 'playing') return;
+  world.camYaw -= e.movementX * 0.0032;
+  world.camPitch = Math.max(-0.15, Math.min(0.7, world.camPitch + e.movementY * 0.0022));
+});
+canvas.addEventListener('mousedown', (e) => {
+  if (e.button !== 0 || world.screen !== 'playing') return;
+  audio.ensure();
+  tryShoot(world);
+});
+window.addEventListener('keydown', (e) => {
+  if (e.repeat) return;
+  keys.add(e.code);
+  if (e.code === 'ArrowLeft') world.camYaw += 0.12;
+  if (e.code === 'ArrowRight') world.camYaw -= 0.12;
+  if (world.screen !== 'playing') return;
+  if (e.code === KEYS.interact) {
+    if (player.inVehicle) exitVehicle(world);
+    else if (vehicles.nearestCar) enterVehicle(world, vehicles.nearestCar);
+  }
+  if (e.code === KEYS.reload) reload(world);
+  if (e.code === KEYS.radio) {
+    const name = audio.cycleRadio();
+    world.hud.toast(`Radio: ${name}`);
+  }
+  if (e.code === KEYS.horn && player.inVehicle) audio.horn();
+  if (e.code === KEYS.mute) {
+    const muted = audio.toggleMute();
+    world.hud.toast(muted ? 'Suara mati' : 'Suara hidup');
+  }
+  if (e.code === 'KeyJ') {
+    const def = currentJobDef(world);
+    if (def && !jobs.active && !jobs.side) startJob(world, jobs.index);
+  }
+  if (e.code === 'KeyT') startTaxi(world);
+  if (e.code === 'KeyG') startRace(world);
+  if (e.code === KEYS.pause) {
+    world.screen = 'paused';
+    world.hud.setPaused(true);
+    announce('Jeda.');
+  }
+});
+window.addEventListener('keyup', (e) => keys.delete(e.code));
+window.addEventListener('keydown', (e) => {
+  if (e.code === KEYS.pause && world.screen === 'paused') {
+    world.screen = 'playing';
+    world.hud.setPaused(false);
+    announce('Lanjut.');
+  }
+});
 window.addEventListener('resize', () => {
   camera.aspect = window.innerWidth / window.innerHeight;
   camera.updateProjectionMatrix();
   renderer.setSize(window.innerWidth, window.innerHeight);
 });
-
-// ---------------------------------------------------------------- world
-const city = buildCity(scene, rng);
-const traffic = createTraffic(scene, rng, 14, city.colliders);
-const parked = createParkedVehicles(scene, rng, 16);
-const crowd = new PedestrianCrowd(scene, rng, 38);
-const player = new Player(scene, city.colliders);
-const police = new PoliceSystem(scene, rng, city.colliders);
-const audio = new GameAudio();
-const hud = new Hud();
-const rig = new CameraRig(camera);
-
-// Objective / giver marker beams.
-function makeMarkerBeam(colour) {
-  const beam = new THREE.Mesh(
-    new THREE.CylinderGeometry(1.5, 1.5, 26, 14, 1, true),
-    new THREE.MeshBasicMaterial({ color: colour, transparent: true, opacity: 0.3, side: THREE.DoubleSide, depthWrite: false })
-  );
-  beam.position.y = 13;
-  const group = new THREE.Group();
-  group.add(beam);
-  scene.add(group);
-  return group;
-}
-const objectiveMarker = makeMarkerBeam(0xffb347);
-const giverMarker = makeMarkerBeam(0x2ee6c8);
-
-// Rain: a box of falling streaks that follows the camera.
-const RAIN_COUNT = 1400;
-const rainPositions = new Float32Array(RAIN_COUNT * 3);
-for (let i = 0; i < RAIN_COUNT; i++) {
-  rainPositions[i * 3] = rng.range(-45, 45);
-  rainPositions[i * 3 + 1] = rng.range(0, 42);
-  rainPositions[i * 3 + 2] = rng.range(-45, 45);
-}
-const rainGeo = new THREE.BufferGeometry();
-rainGeo.setAttribute('position', new THREE.BufferAttribute(rainPositions, 3));
-const rain = new THREE.Points(rainGeo, new THREE.PointsMaterial({ color: 0xaad4e8, size: 0.14, transparent: true, opacity: 0.75 }));
-rain.visible = false;
-scene.add(rain);
-
-// ---------------------------------------------------------------- state
-const saved = loadSave();
-const base = freshState();
-let cash = saved?.cash ?? base.cash;
-let respect = saved?.respect ?? base.respect;
-let hour = saved?.hour ?? DAY.startHour;
-if (saved?.position) player.teleport(saved.position.x, saved.position.z);
-let gameTime = 0;
-let started = false;
-let dead = false;
-let lastDamageAt = -99;
-let invulnerableUntil = 0;
-let raining = false;
-let wetFactor = 0;
-let nextRainAt = rng.range(45, 120);
-let rainEndsAt = 0;
-let saveTimer = 0;
-let wasNight = null;
-
-const jobs = new JobManager({
-  now: () => gameTime,
-  notify: (text) => hud.notify(text),
-  startDialogue: (lines, done) => hud.startDialogue(lines, done),
-  addCash: (n) => { cash += n; if (n > 0) audio.cashRegister(); },
-  addRespect: (n) => { respect += n; },
-  addHeat: (n) => police.addHeat(n),
-  save: () => persist(),
-});
-
-function persist() {
-  storeSave({ cash, respect, jobs: jobs.snapshot(), position: player.pos, hour });
-}
-jobs.restore(saved ? { storyIndex: saved.storyIndex, completedStory: saved.completedStory } : null);
-if (saved) document.getElementById('continue-note').classList.remove('hidden');
-
-// ---------------------------------------------------------------- combat
-const combat = new Combat(scene, {
-  onShotFired: (x, z) => { audio.gunshot(); crowd.scareAt(x, z, 17); },
-  onCrime: (kind) => police.addHeat(WANTED.crimeHeat[kind] || 4),
-  onPedestrianDown: (target) => {
-    crowd.knockDown(target.pos.x, target.pos.z, 1.2);
-    police.addHeat(WANTED.crimeHeat.hitPedestrian);
-    hud.notify('You shot a pedestrian. The city saw that.');
-  },
-  onVehicleHit: (vehicle, isPolice) => {
-    vehicle.health -= SHOT_VEHICLE_DAMAGE;
-    if (isPolice) police.addHeat(10);
-    if (vehicle.health <= 0 && vehicle.driver === 'traffic') vehicle.driver = null;
-  },
-});
-
-function shootTargets() {
-  const targets = [];
-  for (const m of crowd.members) {
-    if (!m.down) targets.push({ pos: m.mesh.position, kind: 'pedestrian' });
-  }
-  for (const v of [...traffic.vehicles, ...parked]) {
-    if (v !== player.vehicle) targets.push({ pos: v.pos, kind: 'vehicle', vehicle: v, isPolice: false });
-  }
-  for (const c of police.cars) targets.push({ pos: c.pos, kind: 'vehicle', vehicle: c, isPolice: true });
-  return targets;
-}
-
-// ---------------------------------------------------------------- death
-const gameoverEl = document.getElementById('gameover');
-function showGameOver(title, text) {
-  dead = true;
-  document.getElementById('gameover-title').textContent = title;
-  document.getElementById('gameover-text').textContent = text;
-  gameoverEl.classList.remove('hidden');
-}
-function respawn() {
-  dead = false;
-  gameoverEl.classList.add('hidden');
-  player.health = PLAYER_HEALTH_FULL;
-  police.clearHeat();
-  if (player.inVehicle) player.exitVehicle();
-  player.teleport(150, 30, Math.PI);
-  persist();
-}
-const PLAYER_HEALTH_FULL = 100;
-document.getElementById('respawnbtn').addEventListener('click', respawn);
-
-police.onBusted = () => {
-  if (dead) return;
-  const fine = Math.round(cash * ECONOMY.bustFineFraction);
-  cash = Math.max(0, cash - fine);
-  showGameOver('BUSTED', `The Teluk Kirana police walk you to the station. Fine paid: $${fine}. Your wheels are impounded, your pride dented.`);
-};
-
-function damagePlayer(amount) {
-  if (dead || gameTime < invulnerableUntil) return;
-  player.health -= amount;
-  lastDamageAt = gameTime;
-  invulnerableUntil = gameTime + 0.6;
-  hud.flashDamage();
-  if (player.health <= 0) {
-    const fee = Math.min(cash, ECONOMY.hospitalFee);
-    cash -= fee;
-    showGameOver('WASTED', `You wake up at the Pantai clinic. Bill: $${fee}. The harbour keeps your tab — and your story — going.`);
-  }
-}
-
-// ---------------------------------------------------------------- input
-const keys = new Set();
-window.addEventListener('keydown', (e) => {
-  keys.add(e.code);
-  if (e.code === 'Enter' && hud.dialogueOpen) hud.showNextLine();
-  if (started && !dead) {
-    if (e.code === 'KeyE') interact();
-    if (e.code === 'KeyT' && !jobs.sideActive && !jobs.active) { if (jobs.startTaxi(rng, player.pos)) audio.pickup(); }
-    if (e.code === 'KeyR' && !jobs.sideActive && !jobs.active) { jobs.startRace(); }
-    if (e.code === 'Digit1') setRadio(0);
-    if (e.code === 'Digit2') setRadio(1);
-    if (e.code === 'Digit3') setRadio(2);
-    if (e.code === 'KeyF' && !player.inVehicle && !hud.dialogueOpen) combat.fire(player, shootTargets());
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden && world.screen === 'playing') {
+    world.screen = 'paused';
+    world.hud.setPaused(true);
   }
 });
-window.addEventListener('keyup', (e) => keys.delete(e.code));
-canvas.addEventListener('mousedown', (e) => {
-  if (started && !dead && !player.inVehicle && !hud.dialogueOpen && e.button === 0) {
-    combat.fire(player, shootTargets());
-  }
-});
-let dragging = false;
-canvas.addEventListener('pointerdown', () => { dragging = true; });
-window.addEventListener('pointerup', () => { dragging = false; });
-window.addEventListener('pointermove', (e) => {
-  if (dragging && started) rig.addDrag(e.movementX, e.movementY);
-});
 
-function setRadio(index) {
-  audio.setStation(index);
-  hud.setRadio(audio.stationName);
-  if (audio.stationName) hud.notify(`Radio: ${audio.stationName}`);
-}
-
-function nearestVehicle(maxDist) {
-  let best = null;
-  let bestD = maxDist;
-  const all = [...traffic.vehicles, ...parked, ...police.cars];
-  for (const v of all) {
-    const d = distance2d(player.pos.x, player.pos.z, v.pos.x, v.pos.z);
-    if (d < bestD) { bestD = d; best = v; }
-  }
-  return best;
-}
-
-function interact() {
-  if (hud.dialogueOpen) return;
-  if (player.inVehicle) { player.exitVehicle(); return; }
-  const giver = jobs.nextGiver;
-  if (giver && !jobs.active && distance2d(player.pos.x, player.pos.z, giver.pos.x, giver.pos.z) < 3.4) {
-    jobs.startStoryJob();
-    return;
-  }
-  const vehicle = nearestVehicle(3.4);
-  if (vehicle) {
-    const wasDriven = vehicle.driver === 'traffic';
-    const wasPolice = police.cars.includes(vehicle);
-    player.enterVehicle(vehicle);
-    rig.yaw = vehicle.heading + Math.PI;
-    if (wasDriven) {
-      police.addHeat(WANTED.crimeHeat.jack);
-      crowd.scareAt(vehicle.pos.x, vehicle.pos.z, 12);
-      hud.notify('Carjacked! The heat is coming.');
-    } else if (wasPolice) {
-      police.addHeat(WANTED.crimeHeat.jack + 6);
-      hud.notify('You just stole a police car. Bold.');
-    } else {
-      hud.notify(vehicle.kind === 'motor' ? 'Motorbike — lean with A/D.' : 'Driving. E to step out.');
+// ---- Simulation step (no rendering: frame() renders once per rAF) ----
+function step(dt) {
+  world.time += dt;
+  updateSky(dt);
+  if (world.screen === 'playing') {
+    updatePlayer(world, dt, input, world.camYaw);
+    updateVehicles(world, dt, input);
+    updatePedestrians(world, dt);
+    updatePolice(world, dt);
+    updateJobs(world, dt);
+    updateCombat(world, dt);
+    audio.engine(world.speedKmh, player.inVehicle);
+    // Crash events: a thud is faked by a HUD flash.
+    for (const ev of world.events) {
+      if (ev.type === 'crash') world.hud.flashDamage();
     }
-  }
-}
-
-// ---------------------------------------------------------------- sky
-const SKY_STOPS = [
-  { h: 0.0, sky: new THREE.Color(0x0a1826), sunI: 0.1, sunC: new THREE.Color(0x8fb4d9), hemiI: 0.26 },
-  { h: 5.5, sky: new THREE.Color(0x0e2033), sunI: 0.12, sunC: new THREE.Color(0x8fb4d9), hemiI: 0.28 },
-  { h: 7.5, sky: new THREE.Color(0x87b5c9), sunI: 0.8, sunC: new THREE.Color(0xffd9a8), hemiI: 0.55 },
-  { h: 12.0, sky: new THREE.Color(0x6fc3e8), sunI: 1.6, sunC: new THREE.Color(0xffffff), hemiI: 0.85 },
-  { h: 16.5, sky: new THREE.Color(0x5fb2d9), sunI: 1.35, sunC: new THREE.Color(0xfff2d8), hemiI: 0.78 },
-  { h: 18.3, sky: new THREE.Color(0xff9a56), sunI: 0.85, sunC: new THREE.Color(0xff8a4d), hemiI: 0.5 },
-  { h: 19.6, sky: new THREE.Color(0x2c3e5e), sunI: 0.25, sunC: new THREE.Color(0xd98a5a), hemiI: 0.33 },
-  { h: 24.0, sky: new THREE.Color(0x0a1826), sunI: 0.1, sunC: new THREE.Color(0x8fb4d9), hemiI: 0.26 },
-];
-
-function applySky(focus) {
-  let a = SKY_STOPS[0];
-  let b = SKY_STOPS[SKY_STOPS.length - 1];
-  for (let i = 0; i < SKY_STOPS.length - 1; i++) {
-    if (hour >= SKY_STOPS[i].h && hour <= SKY_STOPS[i + 1].h) { a = SKY_STOPS[i]; b = SKY_STOPS[i + 1]; break; }
-  }
-  const t = b.h > a.h ? (hour - a.h) / (b.h - a.h) : 0;
-  const skyColour = a.sky.clone().lerp(b.sky, t);
-  if (raining) skyColour.lerp(new THREE.Color(0x5a6d78), 0.45);
-  scene.background.copy(skyColour);
-  scene.fog.color.copy(skyColour);
-  sun.intensity = lerp(a.sunI, b.sunI, t) * (raining ? 0.6 : 1);
-  sun.color.copy(a.sunC.clone().lerp(b.sunC, t));
-  hemi.intensity = lerp(a.hemiI, b.hemiI, t) * (raining ? 0.75 : 1);
-  const sunAngle = ((hour - 6) / 12) * Math.PI;
-  const elev = Math.sin(sunAngle);
-  sun.position.set(focus.x + Math.cos(sunAngle) * 140, Math.max(8, elev * 130), focus.z + 46);
-  sun.target.position.copy(focus);
-  const nightFactor = clamp((0.12 - elev) * 2.4, 0, 1);
-  return nightFactor;
-}
-
-// ---------------------------------------------------------------- shots
-let shotFrames = 0;
-let suppressGiverMarker = false;
-function stageShot(name) {
-  started = true;
-  document.getElementById('startscreen').classList.add('hidden');
-  hud.show();
-  const giveCar = (x, z, heading, colour = 0xd94f38) => {
-    const car = new Vehicle(scene, 'car', colour, x, z, heading);
-    return car;
-  };
-  if (name === 'cover') {
-    hour = 18.35;
-    const car = giveCar(66, 24.6, 0);
-    car.speed = 19;
-    player.enterVehicle(car);
-    const copA = police.spawnCarNear({ x: 30, z: 22 });
-    copA.pos.set(50, 0, 20.5); copA.heading = 0; copA.speed = 20;
-    const copB = police.spawnCarNear({ x: 30, z: 30 });
-    copB.pos.set(54, 0, 29); copB.heading = 0; copB.speed = 20;
-    police.setHeat(WANTED.thresholds[5] + 5);
-    police.helicopterActive = true;
-    police.helicopter.visible = true;
-    police.helicopter.position.set(48, 23, 44);
-    player.mesh.position.y = -3; // seated in the car, out of frame
-    rig.pin(new THREE.Vector3(88, 5.5, 4), new THREE.Vector3(58, 1.2, 26));
-    hud.notify('FIVE STARS — the whole city is watching');
-  } else if (name === 'city') {
-    hour = 10.4;
-    player.teleport(-44, 8, 0.6);
-    rig.pin(new THREE.Vector3(-120, 92, 158), new THREE.Vector3(30, 0, -30));
-  } else if (name === 'foot') {
-    hour = 15.4;
-    player.teleport(-52, -28, 2.4);
-    rig.pin(new THREE.Vector3(-61, 3.2, -17), new THREE.Vector3(-50, 1.3, -31));
-  } else if (name === 'harbor') {
-    hour = 17.55;
-    player.teleport(176, 30, 0.5);
-    suppressGiverMarker = true; // the teal beam would swallow this frame
-    rig.pin(new THREE.Vector3(160, 4, 30), new THREE.Vector3(220, 1, 30));
-    hud.startDialogue([
-      ['Kapten Rudi', 'One crate, no questions. It fell off a manifest, not a ship.'],
-      ['Kira', 'Everything falls somewhere with you, Kapten.'],
-    ], () => {});
-  }
-}
-
-// ---------------------------------------------------------------- start
-document.getElementById('startbtn').addEventListener('click', () => {
-  audio.unlock();
-  started = true;
-  document.getElementById('startscreen').classList.add('hidden');
-  hud.show();
-  hud.notify('Welcome to Teluk Kirana. Follow the teal marker to your first job.');
-});
-if (shotName) stageShot(shotName);
-
-// ---------------------------------------------------------------- loop
-const clock = new THREE.Clock();
-
-function focusInfo() {
-  if (player.inVehicle) {
-    return { pos: player.vehicle.pos, heading: player.vehicle.heading, speed: player.vehicle.speed, vehicle: player.vehicle };
-  }
-  return { pos: player.pos, heading: player.heading, speed: player.speedNow, vehicle: null };
-}
-
-function animate() {
-  requestAnimationFrame(animate);
-  const dt = Math.min(clock.getDelta(), 0.05);
-  const focus = focusInfo();
-
-  if (!started) {
-    // Attract mode: slow orbit over the harbour while the title shows.
-    const t = performance.now() / 14000;
-    camera.position.set(120 + Math.cos(t) * 60, 26, 60 + Math.sin(t) * 60);
-    camera.lookAt(40, 0, 0);
-    hour = 17.4;
-    applySky(camera.position);
-    city.update(performance.now() / 1000, 0.25, 0);
-    renderer.render(scene, camera);
-    return;
-  }
-
-  if (!dead && !shotName) {
-    gameTime += dt;
-    hour = (hour + DAY.hoursPerRealSecond * dt) % 24;
-  } else if (shotName) {
-    gameTime += dt;
-  }
-
-  // Weather state machine.
-  if (!shotName) {
-    if (!raining && gameTime > nextRainAt) { raining = true; rainEndsAt = gameTime + rng.range(45, 115); }
-    if (raining && gameTime > rainEndsAt) { raining = false; nextRainAt = gameTime + rng.range(150, 420); }
-  }
-  wetFactor += ((raining ? 1 : 0) - wetFactor) * clamp(dt * 0.5, 0, 1);
-  rain.visible = raining;
-  if (raining) {
-    const pos = rainGeo.attributes.position;
-    for (let i = 0; i < RAIN_COUNT; i++) {
-      let y = pos.getY(i) - 52 * dt;
-      if (y < 0) y = 42;
-      pos.setY(i, y);
-    }
-    pos.needsUpdate = true;
-    rain.position.set(focus.pos.x, 0, focus.pos.z);
-  }
-  audio.setRainLevel(wetFactor);
-
-  const nightFactor = applySky(focus.pos);
-  city.update(gameTime, nightFactor, wetFactor);
-  const isNight = nightFactor > 0.5;
-  if (isNight !== wasNight) {
-    wasNight = isNight;
-    for (const v of [...traffic.vehicles, ...parked, ...police.cars]) v.setHeadlights(isNight);
-    if (player.vehicle) player.vehicle.setHeadlights(isNight);
-  }
-
-  if (!dead) {
-    // --- player movement / driving
-    const fwd = (keys.has('KeyW') || keys.has('ArrowUp') ? 1 : 0) - (keys.has('KeyS') || keys.has('ArrowDown') ? 1 : 0);
-    const side = (keys.has('KeyA') || keys.has('ArrowLeft') ? 1 : 0) - (keys.has('KeyD') || keys.has('ArrowRight') ? 1 : 0);
-    if (player.inVehicle && !shotName) {
-      const vehicle = player.vehicle;
-      const prevHealth = vehicle.health;
-      vehicle.drive(dt, hud.dialogueOpen ? 0 : fwd, hud.dialogueOpen ? 0 : side, city.colliders);
-      if (keys.has('Space')) vehicle.speed -= vehicle.speed * 3.2 * dt;
-      if (vehicle.health < prevHealth - 3) {
-        audio.crash();
-        damagePlayer((prevHealth - vehicle.health) * 0.35);
-        crowd.scareAt(vehicle.pos.x, vehicle.pos.z, 10);
-      }
-    } else if (!hud.dialogueOpen && !shotName) {
-      const camYaw = rig.yaw;
-      const wishX = Math.cos(camYaw) * -fwd + Math.cos(camYaw - Math.PI / 2) * side * -1;
-      const wishZ = Math.sin(camYaw) * -fwd + Math.sin(camYaw - Math.PI / 2) * side * -1;
-      player.update(dt, wishX, wishZ, keys.has('ShiftLeft') || keys.has('ShiftRight'));
-    } else if (player.inVehicle === false) {
-      player.update(dt, 0, 0, false);
-    }
-
-    // Traffic may hit a pedestrian player.
-    if (!player.inVehicle && gameTime > invulnerableUntil) {
-      for (const v of traffic.vehicles) {
-        if (Math.abs(v.speed) > 4 && distance2d(player.pos.x, player.pos.z, v.pos.x, v.pos.z) < 1.7) {
-          damagePlayer(16);
-          crowd.scareAt(player.pos.x, player.pos.z, 9);
-          break;
-        }
-      }
-    }
-
-    // Running over a pedestrian in a vehicle: crime + damage.
-    if (player.inVehicle && Math.abs(player.vehicle.speed) > 5) {
-      const hit = crowd.members.find((m) => !m.down && distance2d(player.vehicle.pos.x, player.vehicle.pos.z, m.mesh.position.x, m.mesh.position.z) < 1.6);
-      if (hit) {
-        crowd.knockDown(hit.mesh.position.x, hit.mesh.position.z, 1.4);
-        police.addHeat(WANTED.crimeHeat.hitPedestrian);
-        damagePlayer(3);
-        hud.notify('You hit a pedestrian!');
-      }
-    }
-
-    if (gameTime - lastDamageAt > 4 && player.health > 0) {
-      player.health = Math.min(100, player.health + dt * 1.1);
-    }
-  }
-
-  // --- world systems
-  if (!shotName) {
-    traffic.update(dt);
-    crowd.update(dt);
-    police.update(dt, focus);
-    jobs.update();
+    world.events.length = 0;
   } else {
-    crowd.update(dt);
-    // Keep the cover chase frozen in its staged composition, rotor spinning.
-    if (police.helicopterActive) {
-      police.helicopter.userData.rotor.rotation.y += dt * 26;
-      police.helicopter.userData.light.intensity = 1150;
-      const hp = police.helicopter.position;
-      police.helicopter.userData.light.target.position.set(66 - hp.x, -30, 24.6 - hp.z);
-    }
-    if (player.inVehicle) { player.vehicle.syncMesh(dt); player.pos.copy(player.vehicle.pos); }
-  }
-  combat.tryShoot(dt, player);
-
-  // --- objectives & prompts
-  const objective = jobs.currentObjective();
-  const giver = jobs.nextGiver;
-  if (objective) {
-    objectiveMarker.visible = true;
-    objectiveMarker.position.set(objective.x, 0, objective.z);
-    objectiveMarker.rotation.y += dt * 0.8;
-    if (!dead && distance2d(focus.pos.x, focus.pos.z, objective.x, objective.z) < (player.inVehicle ? 7 : 4.2)) {
-      jobs.reachObjective(player.inVehicle);
-    }
-  } else objectiveMarker.visible = false;
-
-  if (giver && !jobs.active && !suppressGiverMarker) {
-    giverMarker.visible = true;
-    giverMarker.position.set(giver.pos.x, 0, giver.pos.z);
-    giverMarker.rotation.y -= dt * 0.6;
-  } else giverMarker.visible = false;
-
-  // Context prompt line.
-  let prompt = null;
-  if (!player.inVehicle && !hud.dialogueOpen) {
-    if (giver && !jobs.active && distance2d(player.pos.x, player.pos.z, giver.pos.x, giver.pos.z) < 3.4) {
-      prompt = `E — Talk to ${giver.name}: ${giver.job.title}`;
-    } else if (nearestVehicle(3.4)) {
-      prompt = 'E — Enter vehicle';
-    } else if (!jobs.active && !jobs.sideActive) {
-      prompt = 'T — Taxi work · R — Street race';
-    }
-  } else if (player.inVehicle) {
-    prompt = 'E — Step out · 1/2/3 — Radio';
-  }
-  hud.setPrompt(prompt);
-
-  // --- HUD refresh
-  const mapObjective = objective || (giver && !jobs.active ? { x: giver.pos.x, z: giver.pos.z } : null);
-  const blips = [
-    ...traffic.vehicles.map((v) => ({ x: v.pos.x, z: v.pos.z, kind: 'traffic' })),
-    ...police.blips(),
-  ];
-  hud.drawMinimap(focus.pos, focus.heading, mapObjective, blips);
-  hud.setStars(police.stars, police.bustProgress);
-  const district = districtAt(focus.pos.x, focus.pos.z);
-  const jobText = jobs.active
-    ? `${jobs.active.job.title} — ${jobs.active.job.objective}`
-    : jobs.sideActive
-      ? (jobs.sideActive.kind === 'taxi' ? 'Taxi fare in progress' : 'Street race in progress')
-      : `Free roam — ${district.name} district`;
-  hud.setStats(cash, respect, player.health, jobText);
-  hud.setClock(hour, raining);
-  hud.setSpeed(player.inVehicle ? player.vehicle.speed * 3.6 : 0, player.inVehicle);
-
-  // Camera.
-  if (!shotName) {
-    rig.update(dt, focus.pos, focus.heading, player.inVehicle);
-  }
-
-  saveTimer += dt;
-  if (saveTimer > 6 && !shotName) { saveTimer = 0; persist(); }
-
-  renderer.render(scene, camera);
-
-  if (shotName) {
-    shotFrames += 1;
-    if (shotFrames > 45) window.__TK_READY__ = true;
+    // Title screen: morning light, traffic and pedestrians drift by.
+    world.timeOfDay = 9.5;
+    updatePedestrians(world, dt);
+    updateVehicles(world, dt, { forward: false, back: false, left: false, right: false, handbrake: false });
   }
 }
 
-animate();
+function render() {
+  if (world.screen === 'playing') {
+    updateCamera(STEP);
+  } else {
+    // Slow orbit around the harbour for a living title backdrop.
+    const a = world.time * 0.05;
+    camera.position.set(Math.sin(a) * 120, 55, 240 + Math.cos(a) * 60);
+    camera.lookAt(0, 8, 200);
+  }
+  world.hud.update(0);
+  renderer.render(scene, camera);
+}
+
+// ---- Shot staging ----
+function stageShot(name) {
+  const def = CONFIG.shots[name] || CONFIG.shots.dawn;
+  world.screen = 'playing';
+  world.hud.hideStart();
+  document.getElementById('hud').classList.remove('hidden');
+  world.timeOfDay = def.timeOfDay;
+  world.weather = def.weather;
+  audio.rain(def.weather === 'rain');
+  player.pos.set(def.at[0], 0, def.at[1]);
+  player.heading = def.heading;
+  world.camYaw = def.heading;
+  if (def.vehicle === 'car') {
+    const car = vehicles.playerCar;
+    car.pos.set(def.at[0], 0, def.at[1]);
+    car.heading = def.heading;
+    enterVehicle(world, car);
+  } else if (def.vehicle === 'bike') {
+    const bike = vehicles.playerBike;
+    bike.pos.set(def.at[0], 0, def.at[1]);
+    bike.heading = def.heading;
+    enterVehicle(world, bike);
+  }
+  if (def.wanted > 0) setWanted(world, def.wanted);
+  // Play the world forward so traffic, pedestrians and the chase are alive.
+  const simInput = { forward: true, back: false, left: false, right: false, run: false, handbrake: false };
+  const simSeconds = name === 'nightchase' ? 4 : name === 'rainharbor' ? 2.5 : 3.5;
+  const steps = Math.floor(simSeconds / STEP);
+  for (let i = 0; i < steps; i += 1) {
+    world.time += STEP;
+    updateSky(STEP);
+    if (def.vehicle !== 'foot') updateVehicles(world, STEP, simInput);
+    else updatePlayer(world, STEP, { ...simInput, run: false }, world.camYaw);
+    updatePedestrians(world, STEP);
+    updatePolice(world, STEP);
+    updateCombat(world, STEP);
+  }
+  // Cinematic camera per shot, de-collided: a camera inside a building
+  // sees only sky (backfaces are culled), so lift it above any roof that
+  // contains it, and above anything between it and its target.
+  const p = player.pos;
+  const h = player.heading;
+  const fx = Math.sin(h), fz = Math.cos(h);
+  if (def.cam === 'chase') {
+    // Front three-quarter: the getaway car drives at the camera, police behind it.
+    // Offset sideways so a road-edge lamp post never sits dead centre.
+    const px = Math.cos(h), pz = -Math.sin(h);
+    camera.position.set(p.x + fx * 17 + px * 4, 5.2, p.z + fz * 17 + pz * 4);
+    camera.lookAt(p.x - fx * 10, 2, p.z - fz * 10);
+  } else if (def.cam === 'market') {
+    camera.position.set(p.x + 26, 22, p.z + 26);
+    camera.lookAt(p.x, 1, p.z);
+  } else if (def.cam === 'side') {
+    // Profile from the north side of the road, bike near centre, road ahead visible.
+    camera.position.set(p.x + 4, 3.8, p.z - 11);
+    camera.lookAt(p.x - 4, 1.2, p.z);
+  } else {
+    camera.position.set(p.x - fx * 9, 2.8, p.z - fz * 9);
+    camera.lookAt(p.x + fx * 12, 2.6, p.z + fz * 12);
+  }
+  deCollideCamera(city, camera);
+  world.hud.update(0);
+  renderer.render(scene, camera);
+  requestAnimationFrame(() => {
+    renderer.render(scene, camera);
+    window.__shotReady = true;
+  });
+}
+
+// Lift the camera above any roof that contains it (and above anything on
+// the line from its look target), so a staged shot never frames bare sky.
+function deCollideCamera(city, camera) {
+  const pos = camera.position;
+  for (let i = 0; i < 6; i += 1) {
+    let inside = null;
+    for (const c of city.colliders) {
+      if (!c.h) continue;
+      if (pos.x > c.minX && pos.x < c.maxX && pos.z > c.minZ && pos.z < c.maxZ && pos.y < c.h + 2) {
+        inside = c; break;
+      }
+    }
+    if (!inside) break;
+    pos.y = inside.h + 3;
+  }
+}
+
+// ---- Start / continue / retry ----
+function beginPlaying(withSave) {
+  audio.ensure();
+  if (withSave) {
+    const data = loadGame();
+    if (data) {
+      applySave(world, data);
+      world.hud.toast('Save dimuat — selamat datang kembali.');
+    }
+  }
+  world.screen = 'playing';
+  world.hud.hideStart();
+  document.getElementById('hud').classList.remove('hidden');
+  announce('Bermain. WASD untuk bergerak, E untuk masuk mobil.');
+}
+document.getElementById('start-btn').addEventListener('click', () => beginPlaying(false));
+document.getElementById('continue-btn').addEventListener('click', () => beginPlaying(true));
+document.getElementById('retry-btn').addEventListener('click', () => window.location.reload());
+if (loadGame()) document.getElementById('continue-btn').classList.remove('hidden');
+document.getElementById('cash').textContent = `$${readBest() > 0 ? readBest() : CONFIG.player.startCash}`;
+
+// ---- Main loop ----
+let last = performance.now();
+let accumulator = 0;
+function frame(now) {
+  requestAnimationFrame(frame);
+  accumulator += Math.min((now - last) / 1000, MAX_FRAME);
+  last = now;
+  let ran = 0;
+  while (accumulator >= STEP && ran < 5) {
+    step(STEP);
+    accumulator -= STEP;
+    ran += 1;
+  }
+  if (ran === 5) accumulator = 0; // drop backlog instead of spiral-lagging
+  render();
+}
+
+if (shotName) {
+  stageShot(shotName);
+} else {
+  world.hud.showStart();
+  requestAnimationFrame(frame);
+}
