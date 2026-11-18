@@ -1,8 +1,8 @@
 # Teluk Kirana: Heat Season
 
-[![make.fun — gta6-01](https://img.shields.io/badge/make.fun-gta6--01-orange)](https://make.fun/c/gta6-01)
-[![Bounty $1,666](https://img.shields.io/badge/bounty-%241%2C666-gold)](https://make.fun/c/gta6-01)
-[![Top 100 paid](https://img.shields.io/badge/prize-top%20100-brightgreen)](https://make.fun/c/gta6-01)
+[![make.fun · gta6-01](https://make.fun/badge/gta6-01.svg)](https://make.fun/bounty/gta6-01?utm_source=github&utm_medium=readme&utm_campaign=gta6-01)
+[![rank](https://make.fun/badge/gta6-01/lucky-wren-78/teluk-kirana/rank.svg)](https://make.fun/bounty/gta6-01/leaderboard?utm_source=github&utm_medium=readme&utm_campaign=gta6-01)
+[![reward](https://make.fun/badge/gta6-01/lucky-wren-78/teluk-kirana/reward.svg)](https://make.fun/bounty/gta6-01?utm_source=github&utm_medium=readme&utm_campaign=gta6-01)
 
 An original open-world crime game in the browser — a tropical port city, built
 for the [make.fun gta6-01 bounty](https://make.fun/c/gta6-01). No Rockstar
