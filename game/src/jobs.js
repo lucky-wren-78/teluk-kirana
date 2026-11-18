@@ -1,94 +1,96 @@
-// Teluk Kirana — story: 8 jobs with dialogue, plus taxi fares and street races.
-// Each job: talk to the contact, drive to the marker, do the deed, get paid.
+// Teluk Kirana — the story: eight jobs with dialogue, plus open-ended
+// taxi fares and street races. A job is always the same shape — meet the
+// contact, hear them out, drive to the glowing errand, get paid — and the
+// finale turns the whole city's heat up at once.
 import { JOB_REWARDS } from './config.js';
 
 export const JOBS = [
   {
-    id: 'j1', title: 'Pagi di Pasar Lama', giver: 'Bu Ratna — pedagang ikan',
-    brief: 'Antar keranjang ikan segar Bu Ratna ke warung di Kota Tua sebelum pasar tutup.',
+    id: 'pasar-pagi', title: 'Keranjang Ikan Bu Ratna', giver: 'Bu Ratna — penjual ikan Pasar Lama',
+    brief: 'Antar dua keranjang ikan ke warung makan di Kota Tua sebelum dagangan pasar habis.',
     dialogue: [
-      'Bu Ratna: "Nak, ikan-ikan ini harus sampai di warung Pak Dedi sebelum jam sepuluh."',
-      'Bu Ratna: "Motor di depan itu bisa kau pakai. Hati-hati di jalan, jangan sampai tumpah."',
-      'Kamu: "Beress, Bu. Lima menit sampai."',
+      'Bu Ratna: "Ikan pagi ini bagus-bagus, Nak. Warung Pak Dedi sudah menunggu dari subuh."',
+      'Bu Ratna: "Pakai motor biru di depan los itu. Jangan ngebut di gang pasar, ya."',
+      'Kamu: "Tenang, Bu. Ikannya sampai masih segar, saya yang jamin."',
     ],
-    target: { x: -88, z: -64, label: 'Warung Pak Dedi — Kota Tua' },
+    target: { x: -90, z: -62, label: 'Warung Pak Dedi — Kota Tua' },
     reward: JOB_REWARDS[0], wantedOnComplete: 0,
   },
   {
-    id: 'j2', title: 'Paket Tengah Malam', giver: 'Dimas — kurir pelabuhan',
-    brief: 'Ambil paket dari gudang pelabuhan dan antar ke dermaga marina tanpa menarik perhatian.',
+    id: 'paket-diam', title: 'Paket Tanpa Nama', giver: 'Dimas — kurir dermaga',
+    brief: 'Jemput paket tak bernama di gudang pelabuhan, antar ke dermaga marina tanpa membuka segelnya.',
     dialogue: [
-      'Dimas: "Paketnya di gudang 7. Jangan buka, jangan tanya isinya."',
-      'Dimas: "Polisi patroli di jalan pelabuhan — lewat jalan belakang saja."',
-      'Kamu: "Diam-diam saja. Aku yang urus."',
+      'Dimas: "Gudang tujuh, paket cokelat tanpa nama. Jangan dibuka, jangan ditimbang."',
+      'Dimas: "Patroli pelabuhan lagi rajin. Lewat jalan marina saja, lebih sepi."',
+      'Kamu: "Sudah biasa. Paket sampai, mulut saya terkunci."',
     ],
-    target: { x: -140, z: 150, label: 'Dermaga Marina' },
+    target: { x: -138, z: 148, label: 'Dermaga Marina' },
     reward: JOB_REWARDS[1], wantedOnComplete: 1,
   },
   {
-    id: 'j3', title: 'Utang si Bos Salon', giver: 'Sinta — pemilik salon Kirana',
-    brief: 'Tagih utang Rp2 juta dari preman salon di Bukit Kirana. Boleh pakai cara keras.',
+    id: 'utang-salon', title: 'Utang Salon Melati', giver: 'Sinta — pemilik Salon Melati',
+    brief: 'Tagih utang dua juta dari pelanggan yang kabur ke Bukit Kirana. Ambil uangnya, atau motornya.',
     dialogue: [
-      'Sinta: "Dia janji bayar minggu lalu. Sekarang malah pamer motor baru."',
-      'Sinta: "Ambil uangnya. Kalau dia melawan, kau tahu harus apa."',
-      'Kamu: "Aku ambil uangnya, dan motornya sekalian kalau perlu."',
+      'Sinta: "Janji bayar tiga kali, kabur tiga kali. Rambut sudah bagus, utang belum lunas."',
+      'Sinta: "Dia nongkrong di Bukit Kirana. Ambil uangnya — atau motornya sekalian."',
+      'Kamu: "Hari ini dia lunas. Dengan satu cara atau cara lain."',
     ],
-    target: { x: 96, z: -128, label: 'Salon Sinta — Bukit Kirana' },
+    target: { x: 94, z: -126, label: 'Bukit Kirana' },
     reward: JOB_REWARDS[2], wantedOnComplete: 1,
   },
   {
-    id: 'j4', title: 'Kabur dari Razia', giver: 'Raka — pembalap liar',
-    brief: 'Razia besar di jembatan. Bawa Raka menyeberang ke pelabuhan sebelum jalan ditutup.',
+    id: 'razia-jembatan', title: 'Razia di Jembatan', giver: 'Raka — pembalap jalanan',
+    brief: 'Razia gabungan menutup ujung jembatan. Bawa Raka menyeberang ke pelabuhan sebelum barikade rapat.',
     dialogue: [
-      'Raka: "Polisi sudah pasang roadblock di ujung jembatan, bro!"',
-      'Raka: "Kau yang nyetir. Aku yang tunjukin jalan tikus lewat dermaga."',
-      'Kamu: "Pegang yang kuat. Kita lewat bawah jembatan."',
+      'Raka: "Bro, polisi nutup jembatan dari dua arah. Kita harus lewat sekarang!"',
+      'Raka: "Kau yang pegang setir, aku yang baca jalan tikusnya. Deal?"',
+      'Kamu: "Pegangan. Malam ini jembatan milik kita."',
     ],
-    target: { x: 235, z: -30, label: 'Dermaga Timur — Pelabuhan' },
+    target: { x: 232, z: -32, label: 'Dermaga Timur — Pelabuhan' },
     reward: JOB_REWARDS[3], wantedOnComplete: 2,
   },
   {
-    id: 'j5', title: 'Kontainer Hilang', giver: 'Kapten Agus — mandor pelabuhan',
-    brief: 'Satu kontainer muatan "hilang" dari manifest. Temukan dan bawa ke gudang 12.',
+    id: 'kontainer-412', title: 'Kontainer 412', giver: 'Kapten Agus — mandor pelabuhan',
+    brief: 'Kontainer biru 412 hilang dari manifest malam tadi. Temukan di tumpukan timur, bawa ke gudang 12.',
     dialogue: [
-      'Kapten Agus: "Kontainer biru nomor 412. Ada yang mindahin diam-diam semalam."',
-      'Kapten Agus: "Cek di antara tumpukan timur. Jangan ribut-ribut."',
-      'Kamu: "Kontainer biru 412. Ketemu, langsung kubawa."',
+      'Kapten Agus: "Di atas kertas, kontainer 412 tidak pernah ada. Lucu, ya?"',
+      'Kapten Agus: "Cek tumpukan timur. Kalau ketemu, langsung geser ke gudang dua belas."',
+      'Kamu: "Kontainer hantu. Biar saya yang bikin dia nyata lagi."',
     ],
-    target: { x: 210, z: -70, label: 'Gudang 12 — Pelabuhan' },
+    target: { x: 208, z: -72, label: 'Gudang 12 — Pelabuhan' },
     reward: JOB_REWARDS[4], wantedOnComplete: 1,
   },
   {
-    id: 'j6', title: 'Balapan Jalan Raya', giver: 'Raka — pembalap liar',
-    brief: 'Balapan resmi tidak resmi: tiga checkpoint keliling kota, kalahkan mobil Raka.',
+    id: 'balapan-raya', title: 'Raja Jalan Raya', giver: 'Raka — pembalap jalanan',
+    brief: 'Balapan tiga checkpoint keliling kota melawan Raka: pasar, marina, finis di jembatan.',
     dialogue: [
-      'Raka: "Kau menang kemarin cuma beruntung. Sekarang buktikan lagi."',
-      'Raka: "Tiga checkpoint: pasar, marina, lalu kembali ke jembatan."',
-      'Kamu: "Siap-siap kalah lagi, Raka."',
+      'Raka: "Kemarin kau menang karena aku ngantuk. Malam ini aku serius."',
+      'Raka: "Pasar, marina, jembatan. Yang sampai terakhir traktir sate."',
+      'Kamu: "Siapkan uang satenya dari sekarang, Raka."',
     ],
-    target: { x: 252, z: 0, label: 'Garis finis — Jembatan Kirana' },
+    target: { x: 250, z: 2, label: 'Finis — Jembatan Kirana' },
     reward: JOB_REWARDS[5], wantedOnComplete: 2,
   },
   {
-    id: 'j7', title: 'Orang Dalam', giver: 'Bu Ratna — pedagang ikan',
-    brief: 'Seseorang membocorkan jadwal pengiriman ke polisi. Cari tahu siapa di kantor pelabuhan.',
+    id: 'orang-dalam', title: 'Pengkhianat Pelabuhan', giver: 'Bu Ratna — penjual ikan Pasar Lama',
+    brief: 'Tiga pengiriman kena razia berturut-turut. Ada orang dalam di kantor pelabuhan — cari buktinya.',
     dialogue: [
-      'Bu Ratna: "Tiga kali pengiriman kita kena razia. Pasti ada yang bocor dari dalam."',
-      'Bu Ratna: "Kantor pelabuhan, lantai dua. Cari dokumen jadwalnya."',
-      'Kamu: "Kalau ketemu pengkhianatnya, dia berurusan denganku."',
+      'Bu Ratna: "Tiga kali kirim, tiga kali kena razia. Ini bukan nasib buruk, Nak."',
+      'Bu Ratna: "Kantor pelabuhan menyimpan jadwal asli. Ambil, jangan sampai ketahuan."',
+      'Kamu: "Kalau ada pengkhianat, malam ini dia berhenti bekerja."',
     ],
-    target: { x: 180, z: 60, label: 'Kantor Pelabuhan' },
+    target: { x: 178, z: 58, label: 'Kantor Pelabuhan' },
     reward: JOB_REWARDS[6], wantedOnComplete: 2,
   },
   {
-    id: 'j8', title: 'Heat Season', giver: 'Semua orang di Teluk Kirana',
-    brief: 'Finale: bawa muatan terakhir melintasi kota saat polisi di level tertinggi.',
+    id: 'heat-season', title: 'Heat Season — Pengiriman Terakhir', giver: 'Seluruh Teluk Kirana',
+    brief: 'Finale musim panas: satu muatan terakhir melintasi kota saat wanted level di titik tertinggi.',
     dialogue: [
-      'Dimas: "Ini pengiriman terakhir musim ini. Setelah ini kita bersih."',
-      'Sinta: "Seluruh kota bakal panas. Kau yakin bisa?"',
-      'Kamu: "Teluk Kirana milik kita malam ini. Gas!"',
+      'Dimas: "Satu pengiriman lagi, terus kita semua berhenti. Selamanya."',
+      'Sinta: "Polisi satu kota sudah di jalan. Kau yakin sanggup?"',
+      'Kamu: "Teluk Kirana, musim panas, dan saya. Gas terakhir!"',
     ],
-    target: { x: 0, z: 0, label: 'Alun-alun Pasar Lama' },
+    target: { x: 2, z: -4, label: 'Alun-alun Pasar Lama' },
     reward: JOB_REWARDS[7], wantedOnComplete: 3,
   },
 ];
@@ -108,8 +110,15 @@ export class JobManager {
     return this.activeIndex >= 0 ? JOBS[this.activeIndex] : null;
   }
 
+  get currentDialogue() {
+    const job = this.activeJob;
+    if (!job || this.stage !== 'dialogue') return null;
+    return job.dialogue[this.dialogueLine] || null;
+  }
+
   startJob(index) {
     if (index < 0 || index >= JOBS.length) return null;
+    if (this.activeIndex >= 0 && this.stage !== 'done') return null;
     if (this.completed.has(JOBS[index].id)) return null;
     this.activeIndex = index;
     this.stage = 'dialogue';
@@ -118,6 +127,7 @@ export class JobManager {
     return JOBS[index];
   }
 
+  // True once the last line has been read and the errand is live.
   advanceDialogue() {
     const job = this.activeJob;
     if (!job || this.stage !== 'dialogue') return false;
@@ -130,19 +140,12 @@ export class JobManager {
     return false;
   }
 
-  get currentDialogue() {
-    const job = this.activeJob;
-    if (!job || this.stage !== 'dialogue') return null;
-    return job.dialogue[this.dialogueLine] || null;
-  }
-
-  // Returns the finished job when the player reaches the marker, else null.
   update(playerPos) {
     if (this.stage !== 'go' || !this.activeJob) return null;
     const t = this.activeJob.target;
     const dx = playerPos.x - t.x;
     const dz = playerPos.z - t.z;
-    if (dx * dx + dz * dz < 12 * 12) {
+    if (dx * dx + dz * dz < 13 * 13) {
       const job = this.activeJob;
       this.completed.add(job.id);
       this.stage = 'done';
@@ -171,18 +174,16 @@ export class JobManager {
     const target = this.taxi.stage === 'pickup' ? this.taxi.pickup : this.taxi.dropoff;
     const dx = playerPos.x - target.x;
     const dz = playerPos.z - target.z;
-    if (dx * dx + dz * dz < 10 * 10) {
-      if (this.taxi.stage === 'pickup') {
-        this.taxi.stage = 'dropoff';
-        this.onEvent('taxi-pickup', this.taxi);
-        return 'picked-up';
-      }
-      const done = this.taxi;
-      this.taxi = null;
-      this.onEvent('taxi-done', done);
-      return 'delivered';
+    if (dx * dx + dz * dz >= 11 * 11) return null;
+    if (this.taxi.stage === 'pickup') {
+      this.taxi.stage = 'dropoff';
+      this.onEvent('taxi-pickup', this.taxi);
+      return 'picked-up';
     }
-    return null;
+    const done = this.taxi;
+    this.taxi = null;
+    this.onEvent('taxi-done', done);
+    return 'delivered';
   }
 
   startRace(checkpoints) {
@@ -198,16 +199,14 @@ export class JobManager {
     if (!cp) return null;
     const dx = playerPos.x - cp.x;
     const dz = playerPos.z - cp.z;
-    if (dx * dx + dz * dz < 12 * 12) {
-      this.race.index += 1;
-      if (this.race.index >= this.race.checkpoints.length) {
-        this.race.finished = true;
-        this.onEvent('race-done', this.race);
-        return 'finished';
-      }
-      this.onEvent('race-checkpoint', this.race);
-      return 'checkpoint';
+    if (dx * dx + dz * dz >= 13 * 13) return null;
+    this.race.index += 1;
+    if (this.race.index >= this.race.checkpoints.length) {
+      this.race.finished = true;
+      this.onEvent('race-done', this.race);
+      return 'finished';
     }
-    return null;
+    this.onEvent('race-checkpoint', this.race);
+    return 'checkpoint';
   }
 }

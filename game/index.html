@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Teluk Kirana: Heat Season — open-world crime game</title>
+<title>Teluk Kirana: Heat Season — game kriminal dunia terbuka</title>
 <link rel="icon" href="data:,">
 <link rel="stylesheet" href="./style.css">
 <script type="importmap">
@@ -15,15 +15,16 @@
 
 <div id="hud" class="hidden">
   <div id="hud-top-left">
-    <div id="hud-cash">$250</div>
+    <div id="hud-cash">$300</div>
     <div id="hud-wanted">☆☆☆☆☆</div>
-    <div id="hud-clock">10:00</div>
+    <div id="hud-clock">09:36</div>
+    <div id="hud-district">PASAR LAMA</div>
     <div id="hud-radio">♪ KIRANA FM 98.2 — pop tropis</div>
   </div>
   <div id="hud-top-right">
-    <canvas id="minimap" width="168" height="168"></canvas>
+    <canvas id="minimap" width="176" height="176"></canvas>
     <div id="hud-healthbar"><div id="hud-health"></div></div>
-    <div id="hud-ammo">▸ 48</div>
+    <div id="hud-ammo">▸ 60</div>
   </div>
   <div id="hud-bottom-left">
     <div id="hud-objective">Tekan 1–8 untuk mulai job, atau jelajahi kota.</div>
@@ -31,9 +32,10 @@
   </div>
   <div id="hud-bottom-right">
     <div id="hud-speed">JALAN KAKI</div>
-    <div id="hud-controls">WASD jalan / nyetir · E masuk mobil / dialog · F tembak · Q ganti radio · R radio on/off · H simpan</div>
+    <div id="hud-controls">WASD jalan / nyetir · E kendaraan &amp; dialog · F tembak · Q radio · M bisu · H simpan · Esc jeda</div>
     <button id="save-btn" type="button">Simpan (H)</button>
-    <button id="radio-btn" type="button">Ganti Radio (Q)</button>
+    <button id="radio-btn" type="button">Radio (Q)</button>
+    <button id="mute-btn" type="button">Bisu (M)</button>
   </div>
   <div id="interact"></div>
   <div id="crosshair">+</div>
@@ -44,26 +46,34 @@
   </div>
 </div>
 
+<div id="pause-screen" class="hidden">
+  <div class="pause-panel">
+    <h2>JEDA</h2>
+    <p>Tekan Esc untuk lanjut main.</p>
+  </div>
+</div>
+
 <div id="start-screen">
   <div class="panel">
+    <p class="kicker">KOTA PELABUHAN TROPIS · DUNIA TERBUKA · 3D</p>
     <h1>TELUK KIRANA</h1>
     <h2>HEAT SEASON</h2>
-    <p class="tagline">Kota pelabuhan tropis. Delapan job. Lima bintang wanted.<br>
-    Bajak mobilnya, kabur dari polisinya, kuasai musim panas ini.</p>
+    <p class="tagline">Delapan job, lima bintang wanted, satu musim panas yang panas.<br>
+    Bajak kendaraannya, antar paketnya, dan jangan sampai tertangkap.</p>
     <div class="job-list">
-      <button type="button" data-job="0">1 · Pagi di Pasar Lama</button>
-      <button type="button" data-job="1">2 · Paket Tengah Malam</button>
-      <button type="button" data-job="2">3 · Utang si Bos Salon</button>
-      <button type="button" data-job="3">4 · Kabur dari Razia</button>
-      <button type="button" data-job="4">5 · Kontainer Hilang</button>
-      <button type="button" data-job="5">6 · Balapan Jalan Raya</button>
-      <button type="button" data-job="6">7 · Orang Dalam</button>
-      <button type="button" data-job="7">8 · Heat Season</button>
+      <button type="button" data-job="0">1 · Keranjang Ikan Bu Ratna</button>
+      <button type="button" data-job="1">2 · Paket Tanpa Nama</button>
+      <button type="button" data-job="2">3 · Utang Salon Melati</button>
+      <button type="button" data-job="3">4 · Razia di Jembatan</button>
+      <button type="button" data-job="4">5 · Kontainer 412</button>
+      <button type="button" data-job="5">6 · Raja Jalan Raya</button>
+      <button type="button" data-job="6">7 · Pengkhianat Pelabuhan</button>
+      <button type="button" data-job="7">8 · Heat Season — Terakhir</button>
     </div>
     <button id="start-btn" type="button">▶ MULAI MAIN</button>
     <button id="continue-btn" type="button" class="hidden">↻ LANJUTKAN SAVE</button>
-    <p class="keys">WASD bergerak / menyetir · E masuk kendaraan &amp; dialog · F tembak · Q radio · H simpan · drag mouse untuk kamera</p>
-    <p class="credit">Game orisinal — kota, karakter, dan cerita buatan sendiri. Dibangun dengan three.js, tanpa aset dari game komersial mana pun.</p>
+    <p class="keys">WASD bergerak / menyetir · Shift lari · E masuk kendaraan &amp; dialog · F tembak · Q ganti radio · R radio on/off · M bisu · H simpan · Esc jeda · drag mouse untuk kamera</p>
+    <p class="credit">Game orisinal — kota, tokoh, dan cerita diciptakan khusus untuk entri ini. Dibangun dengan three.js; tanpa aset dari game komersial mana pun.</p>
   </div>
 </div>
 

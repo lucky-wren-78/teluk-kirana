@@ -1,12 +1,13 @@
-// Teluk Kirana — small seeded RNG so the city layout is identical every load.
-// mulberry32: deterministic, fast, and good enough for procedural placement.
+// Teluk Kirana — deterministic randomness for the procedural city.
+// A mulberry32 generator: tiny, fast, and stable across machines, so the
+// same seed always grows the same streets, palms and paint jobs.
 export function createRng(seed) {
-  let a = seed >>> 0;
+  let state = (seed >>> 0) || 1;
   return function next() {
-    a |= 0;
-    a = (a + 0x6d2b79f5) | 0;
-    let t = Math.imul(a ^ (a >>> 15), 1 | a);
-    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    state = (state + 0x6d2b79f5) | 0;
+    let t = state;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
     return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
   };
 }
@@ -16,23 +17,24 @@ export function range(rng, min, max) {
 }
 
 export function rangeInt(rng, min, max) {
-  return Math.floor(range(rng, min, max + 1));
+  return min + Math.floor(rng() * (max - min + 1));
 }
 
 export function pick(rng, list) {
-  return list[Math.floor(rng() * list.length) % list.length];
+  if (!list.length) return undefined;
+  return list[Math.min(list.length - 1, Math.floor(rng() * list.length))];
 }
 
 export function chance(rng, probability) {
   return rng() < probability;
 }
 
-// Hash a short string into a uint32 seed (FNV-1a).
+// FNV-1a hash of a short string, used to seed per-shot staging so every
+// screenshot scene is laid out identically on every run.
 export function seedFromString(text) {
-  let h = 2166136261;
+  let h = 0x811c9dc5;
   for (let i = 0; i < text.length; i++) {
-    h ^= text.charCodeAt(i);
-    h = Math.imul(h, 16777619);
+    h = Math.imul(h ^ text.charCodeAt(i), 0x01000193);
   }
   return h >>> 0;
 }

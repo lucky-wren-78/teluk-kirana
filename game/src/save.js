@@ -1,10 +1,13 @@
-// Teluk Kirana — localStorage save / load. Plain JSON, versioned key, never throws:
-// a corrupt or unavailable store just means "no save", never a crashed game.
+// Teluk Kirana — save games in localStorage. The payload is plain,
+// versioned JSON; every access is wrapped so a full, blocked or corrupt
+// store degrades to "no save found" instead of an exception.
 import { CONFIG } from './config.js';
+
+const SAVE_VERSION = 6;
 
 export function saveGame(snapshot) {
   try {
-    const payload = { version: 5, savedAt: new Date().toISOString(), ...snapshot };
+    const payload = { version: SAVE_VERSION, savedAt: new Date().toISOString(), ...snapshot };
     localStorage.setItem(CONFIG.saveKey, JSON.stringify(payload));
     return true;
   } catch {
@@ -17,7 +20,7 @@ export function loadGame() {
     const raw = localStorage.getItem(CONFIG.saveKey);
     if (!raw) return null;
     const data = JSON.parse(raw);
-    if (!data || data.version !== 5) return null;
+    if (!data || typeof data !== 'object' || data.version !== SAVE_VERSION) return null;
     return data;
   } catch {
     return null;
@@ -32,6 +35,6 @@ export function clearSave() {
   try {
     localStorage.removeItem(CONFIG.saveKey);
   } catch {
-    // storage unavailable — nothing to clear
+    // Nothing to clear when storage itself is unavailable.
   }
 }

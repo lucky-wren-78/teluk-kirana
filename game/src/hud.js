@@ -1,14 +1,22 @@
-// Teluk Kirana — HUD: cash, wanted stars, speed, health, clock, job objective,
-// dialogue box, message toasts, and the realtime minimap (2D canvas).
+// Teluk Kirana — HUD: cash, wanted stars, health, ammo, clock, radio,
+// district banner, the job tracker and objective line, dialogue boxes,
+// toasts, the interact prompt — and the realtime minimap, drawn on a 2D
+// canvas from the live world state every frame.
 import { RADIO_STATIONS } from './config.js';
 
 export class Hud {
   constructor() {
-    this.el = (id) => document.getElementById(id);
+    this.cache = new Map();
     this.minimap = this.el('minimap');
     this.mapCtx = this.minimap ? this.minimap.getContext('2d') : null;
     this.toastTimer = null;
     this.dialogueVisible = false;
+    this.districtName = '';
+  }
+
+  el(id) {
+    if (!this.cache.has(id)) this.cache.set(id, document.getElementById(id));
+    return this.cache.get(id);
   }
 
   setCash(amount) {
@@ -19,7 +27,7 @@ export class Hud {
   setWanted(level) {
     const el = this.el('hud-wanted');
     if (!el) return;
-    el.textContent = '★'.repeat(level) + '☆'.repeat(5 - level);
+    el.textContent = '★'.repeat(level) + '☆'.repeat(Math.max(0, 5 - level));
     el.classList.toggle('hot', level >= 3);
   }
 
@@ -29,11 +37,11 @@ export class Hud {
   }
 
   setHealth(hp) {
-    const el = this.el('hud-health');
-    if (el) {
-      el.style.width = `${Math.max(0, Math.min(100, hp))}%`;
-      el.classList.toggle('low', hp < 30);
-    }
+    const bar = this.el('hud-health');
+    if (!bar) return;
+    const pct = Math.max(0, Math.min(100, hp));
+    bar.style.width = `${pct}%`;
+    bar.classList.toggle('low', pct < 30);
   }
 
   setAmmo(ammo) {
@@ -44,14 +52,23 @@ export class Hud {
   setClock(hour, minute, raining) {
     const el = this.el('hud-clock');
     if (!el) return;
-    const h = String(Math.floor(hour)).padStart(2, '0');
-    const m = String(Math.floor(minute)).padStart(2, '0');
-    el.textContent = `${h}:${m}${raining ? ' ☂ hujan' : ''}`;
+    const hh = String(Math.floor(hour) % 24).padStart(2, '0');
+    const mm = String(Math.floor(minute) % 60).padStart(2, '0');
+    el.textContent = `${hh}:${mm}${raining ? ' · hujan' : ''}`;
   }
 
-  setStation(index, on) {
+  setDistrict(name) {
+    if (name === this.districtName) return;
+    this.districtName = name;
+    const el = this.el('hud-district');
+    if (el) el.textContent = name.toUpperCase();
+  }
+
+  setStation(index, on, muted) {
     const el = this.el('hud-radio');
-    if (el) el.textContent = on ? `♪ ${RADIO_STATIONS[index].name}` : '♪ radio mati';
+    if (!el) return;
+    if (muted) el.textContent = '♪ radio — bisu (M)';
+    else el.textContent = on ? `♪ ${RADIO_STATIONS[index].name}` : '♪ radio mati (R)';
   }
 
   setObjective(text) {
@@ -62,10 +79,10 @@ export class Hud {
   setJobList(jobs, completed, activeIndex) {
     const el = this.el('hud-jobs');
     if (!el) return;
-    el.innerHTML = jobs.map((j, i) => {
-      const done = completed.has(j.id) ? ' ✓' : '';
-      const active = i === activeIndex ? ' ▶ ' : '';
-      return `<div class="${i === activeIndex ? 'active' : ''}">${active}${i + 1}. ${j.title}${done}</div>`;
+    el.innerHTML = jobs.map((job, i) => {
+      const mark = completed.has(job.id) ? ' ✓' : i === activeIndex ? ' ▶' : '';
+      const cls = i === activeIndex ? ' class="active"' : '';
+      return `<div${cls}>${i + 1}. ${job.title}${mark}</div>`;
     }).join('');
   }
 
@@ -74,8 +91,8 @@ export class Hud {
     const body = this.el('dialogue-text');
     if (!box || !body) return;
     body.textContent = text;
-    const h = this.el('dialogue-hint');
-    if (h) h.textContent = hint || 'Tekan E untuk lanjut';
+    const hintEl = this.el('dialogue-hint');
+    if (hintEl) hintEl.textContent = hint || 'Tekan E untuk lanjut';
     box.classList.add('visible');
     this.dialogueVisible = true;
   }
@@ -86,7 +103,7 @@ export class Hud {
     this.dialogueVisible = false;
   }
 
-  toast(message, ms = 3200) {
+  toast(message, ms = 3400) {
     const el = this.el('toast');
     if (!el) return;
     el.textContent = message;
@@ -106,63 +123,76 @@ export class Hud {
     }
   }
 
-  // Realtime minimap: roads, buildings, water, job marker, police, player arrow.
+  // Minimap: sea, basin, roads, bridge, buildings, the job marker, police
+  // blips, the helicopter, and the player arrow in the middle of it all.
   drawMinimap(world) {
     if (!this.mapCtx) return;
     const ctx = this.mapCtx;
-    const S = 168;
-    const scale = S / 460;
+    const S = 176;
+    const scale = S / 470;
     const toMap = (x, z) => [S / 2 + x * scale, S / 2 + z * scale];
-    ctx.fillStyle = '#10181f';
+    ctx.fillStyle = '#131a21';
     ctx.fillRect(0, 0, S, S);
-    // water
-    ctx.fillStyle = '#146b8a';
-    ctx.fillRect(S / 2 + 220 * scale, 0, S, S);
-    // roads
-    ctx.strokeStyle = '#3d444b';
+    ctx.fillStyle = '#14607f';
+    const [seaX] = toMap(218, 0);
+    ctx.fillRect(seaX, 0, S - seaX, S);
+    const [basinX, basinZ] = toMap(-193, 120);
+    ctx.fillRect(basinX, basinZ, 150 * scale, 96 * scale);
+    ctx.strokeStyle = '#454e57';
     ctx.lineWidth = 2;
     for (let c = -220; c <= 220; c += 44) {
-      const [x1] = toMap(c, 0);
-      ctx.beginPath(); ctx.moveTo(x1, 0); ctx.lineTo(x1, S); ctx.stroke();
-      const [, z1] = toMap(0, c);
-      ctx.beginPath(); ctx.moveTo(0, z1); ctx.lineTo(S, z1); ctx.stroke();
+      const [lx] = toMap(c, 0);
+      ctx.beginPath(); ctx.moveTo(lx, 0); ctx.lineTo(lx, S); ctx.stroke();
+      const [, lz] = toMap(0, c);
+      ctx.beginPath(); ctx.moveTo(0, lz); ctx.lineTo(S, lz); ctx.stroke();
     }
-    // buildings
-    ctx.fillStyle = '#5a6b7a';
+    // the bridge, drawn as a pale span over the channel
+    ctx.strokeStyle = '#c9c2ae';
+    ctx.lineWidth = 3;
+    const [b1x, b1z] = toMap(196, 0);
+    const [b2x] = toMap(312, 0);
+    ctx.beginPath(); ctx.moveTo(b1x, b1z); ctx.lineTo(b2x, b1z); ctx.stroke();
+    ctx.fillStyle = '#5d6d7d';
     for (const b of world.city.buildings) {
       const [bx, bz] = toMap(b.aabb.minX, b.aabb.minZ);
-      const w = (b.aabb.maxX - b.aabb.minX) * scale;
-      const h = (b.aabb.maxZ - b.aabb.minZ) * scale;
-      ctx.fillRect(bx, bz, Math.max(1, w), Math.max(1, h));
+      ctx.fillRect(bx, bz, Math.max(1, (b.aabb.maxX - b.aabb.minX) * scale), Math.max(1, (b.aabb.maxZ - b.aabb.minZ) * scale));
     }
-    // job / taxi / race marker
+    // traffic dots
+    ctx.fillStyle = '#9fb3c8';
+    for (const v of world.traffic) {
+      const [vx, vz] = toMap(v.x, v.z);
+      ctx.fillRect(vx - 1, vz - 1, 2, 2);
+    }
     const marker = world.jobMarker;
     if (marker) {
       const [mx, mz] = toMap(marker.x, marker.z);
       ctx.fillStyle = '#ffd23f';
       ctx.beginPath(); ctx.arc(mx, mz, 5, 0, Math.PI * 2); ctx.fill();
-      ctx.strokeStyle = '#000';
+      ctx.strokeStyle = '#14100a';
+      ctx.lineWidth = 1.5;
       ctx.stroke();
     }
-    // police
     ctx.fillStyle = '#3f8cff';
     for (const car of world.police.cars) {
       const [px, pz] = toMap(car.x, car.z);
       ctx.fillRect(px - 2, pz - 2, 4, 4);
     }
     if (world.police.heli && world.police.heli.group.visible) {
-      const [hx, hz] = toMap(world.police.heli.group.position.x, world.police.heli.group.position.z);
+      const hp = world.police.heli.group.position;
+      const [hx, hz] = toMap(hp.x, hp.z);
       ctx.fillStyle = '#ff5522';
       ctx.beginPath(); ctx.arc(hx, hz, 4, 0, Math.PI * 2); ctx.fill();
     }
-    // player arrow
     const [px, pz] = toMap(world.player.x, world.player.z);
     ctx.save();
     ctx.translate(px, pz);
     ctx.rotate(-world.player.heading);
     ctx.fillStyle = '#ffffff';
     ctx.beginPath();
-    ctx.moveTo(0, -7); ctx.lineTo(5, 5); ctx.lineTo(-5, 5); ctx.closePath();
+    ctx.moveTo(0, -7);
+    ctx.lineTo(5, 5);
+    ctx.lineTo(-5, 5);
+    ctx.closePath();
     ctx.fill();
     ctx.restore();
   }
