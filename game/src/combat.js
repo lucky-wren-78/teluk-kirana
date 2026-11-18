@@ -1,79 +1,71 @@
-// Combat: a pistol with raycast hits, muzzle flash, ammo and reload.
-// Shooting in public raises the heat; killing a pedestrian raises it more.
+// Teluk Kirana — pistol combat: raycast shots from the camera, muzzle flash,
+// tracer, hit feedback on pedestrians and police cars, and the wanted cost.
 import * as THREE from 'three';
-import { CONFIG } from './config.js';
-import { fleeFrom } from './pedestrians.js';
 
-export function createCombat(scene, camera) {
-  const flash = new THREE.PointLight(0xffc860, 0, 18, 1.5);
-  scene.add(flash);
-  return {
-    scene, camera, flash,
-    flashTimer: 0, lastShotAt: -999,
-  };
-}
+export class Combat {
+  constructor(scene, camera) {
+    this.scene = scene;
+    this.camera = camera;
+    this.raycaster = new THREE.Raycaster();
+    this.ammo = 48;
+    this.cooldown = 0;
+    this.lastShotAt = null;
+    this.flash = new THREE.PointLight(0xffc46a, 0, 14, 1.5);
+    scene.add(this.flash);
+    this.tracerMat = new THREE.LineBasicMaterial({ color: 0xffe08a, transparent: true, opacity: 0.9 });
+    this.tracer = null;
+    this.shotsFired = 0;
+    this.hits = 0;
+  }
 
-export function tryShoot(world) {
-  const { player, combat, police } = world;
-  if (player.inVehicle || player.dead) return;
-  if (world.time - combat.lastShotAt < CONFIG.combat.fireInterval) return;
-  if (player.ammo <= 0) {
-    world.hud.toast('Peluru habis — tekan R untuk isi ulang.');
-    world.audio.blip();
-    return;
+  canShoot() {
+    return this.cooldown <= 0 && this.ammo > 0;
   }
-  combat.lastShotAt = world.time;
-  player.ammo -= 1;
-  world.audio.shot();
-  combat.flashTimer = 0.07;
-  const origin = world.camera.position.clone();
-  const dir = new THREE.Vector3();
-  world.camera.getWorldDirection(dir);
-  combat.flash.position.copy(origin).addScaledVector(dir, 2);
-  const ray = new THREE.Raycaster(origin, dir, 0.1, CONFIG.combat.range);
 
-  const targets = [];
-  for (const w of world.pedestrians.list) {
-    if (w.alive) targets.push({ mesh: w.mesh, ref: w, kind: 'ped' });
-  }
-  for (const car of world.vehicles.list) {
-    if (car.alive && car.driver === 'police') targets.push({ mesh: car.mesh, ref: car, kind: 'police' });
-  }
-  const hits = ray.intersectObjects(targets.map((t) => t.mesh), true);
-  if (hits.length > 0) {
-    let obj = hits[0].object;
-    while (obj.parent && !targets.some((t) => t.mesh === obj)) obj = obj.parent;
-    const t = targets.find((x) => x.mesh === obj);
-    if (t) {
-      if (t.kind === 'ped') {
-        t.ref.alive = false;
-        t.ref.mesh.visible = false;
-        police.addHeat(world, CONFIG.police.heatPerCrime.kill);
-        world.hud.toast('Kamu menembak pejalan kaki!');
-      } else {
-        t.ref.speed = Math.max(0, t.ref.speed - 12);
-        police.addHeat(world, CONFIG.police.heatPerCrime.shoot);
+  update(dt) {
+    this.cooldown = Math.max(0, this.cooldown - dt);
+    this.flash.intensity = Math.max(0, this.flash.intensity - dt * 260);
+    if (this.tracer) {
+      this.tracerMat.opacity -= dt * 5;
+      if (this.tracerMat.opacity <= 0) {
+        this.scene.remove(this.tracer);
+        this.tracer.geometry.dispose();
+        this.tracer = null;
       }
     }
-  } else {
-    police.addHeat(world, CONFIG.police.heatPerCrime.shoot * 0.4);
   }
-  fleeFrom(world, player.pos.x, player.pos.z, 40);
-}
 
-export function reload(world) {
-  const { player } = world;
-  if (player.ammo === CONFIG.player.maxAmmo) return;
-  player.ammo = CONFIG.player.maxAmmo;
-  world.hud.toast('Peluru diisi ulang.');
-  world.audio.blip();
-}
+  // Fire from the camera through the screen centre. Returns a hit report.
+  shoot(origin, direction, targets, audio) {
+    if (!this.canShoot()) return null;
+    this.cooldown = 0.22;
+    this.ammo -= 1;
+    this.shotsFired += 1;
+    this.lastShotAt = { x: origin.x, z: origin.z };
+    this.raycaster.set(origin, direction);
+    this.raycaster.far = 90;
+    const hits = this.raycaster.intersectObjects(targets, true);
+    const end = hits.length > 0 ? hits[0].point : origin.clone().add(direction.clone().multiplyScalar(80));
+    const geo = new THREE.BufferGeometry().setFromPoints([origin, end]);
+    if (this.tracer) this.scene.remove(this.tracer);
+    this.tracer = new THREE.Line(geo, this.tracerMat);
+    this.tracerMat.opacity = 0.9;
+    this.scene.add(this.tracer);
+    this.flash.position.copy(origin).add(direction.clone().multiplyScalar(1.2));
+    this.flash.intensity = 90;
+    if (audio) audio.playShot();
+    if (hits.length > 0) {
+      this.hits += 1;
+      return { hit: true, point: hits[0].point, object: hits[0].object };
+    }
+    return { hit: false, point: end, object: null };
+  }
 
-export function updateCombat(world, dt) {
-  const { combat } = world;
-  if (combat.flashTimer > 0) {
-    combat.flashTimer -= dt;
-    combat.flash.intensity = 60;
-    if (combat.flashTimer <= 0) combat.flash.intensity = 0;
+  // Ray from the centre of the screen — used by the click-to-shoot input.
+  shootFromCamera(targets, audio) {
+    const dir = new THREE.Vector3();
+    this.camera.getWorldDirection(dir);
+    const origin = this.camera.position.clone();
+    return this.shoot(origin, dir, targets, audio);
   }
 }

@@ -1,93 +1,118 @@
-// The player on foot: walk/run with camera-relative steering, collision
-// against buildings, and a simple low-poly body that faces where it walks.
+// Teluk Kirana — the player on foot, and getting in and out of vehicles.
+// Bug #2 fix: `heading` is initialised to 0 at spawn, is a plain finite number,
+// and is never deleted or reassigned to undefined anywhere in the game.
 import * as THREE from 'three';
-import { CONFIG } from './config.js';
-import { collideCircle } from './city.js';
+import { CONFIG, PLAYER_SPAWN, clampNumber } from './config.js';
+import { resolveCircleCollision } from './city.js';
 
-function buildPlayerMesh() {
+export function makePlayerMesh() {
   const g = new THREE.Group();
-  const jacket = new THREE.MeshLambertMaterial({ color: 0x1f6f4a });
-  const body = new THREE.Mesh(new THREE.BoxGeometry(0.85, 1.05, 0.5), jacket);
-  body.position.y = 1.05; g.add(body);
-  const head = new THREE.Mesh(
-    new THREE.SphereGeometry(0.32, 10, 8),
-    new THREE.MeshLambertMaterial({ color: 0xc98d64 }),
-  );
-  head.position.y = 1.85; g.add(head);
-  const cap = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.34, 0.34, 0.12, 10),
-    new THREE.MeshLambertMaterial({ color: 0xe4572e }),
-  );
-  cap.position.y = 2.08; g.add(cap);
-  const legMat = new THREE.MeshLambertMaterial({ color: 0x2b2b2e });
-  for (const x of [-0.22, 0.22]) {
-    const leg = new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.9, 0.36), legMat);
-    leg.position.set(x, 0.45, 0); g.add(leg);
+  const jacket = new THREE.MeshStandardMaterial({ color: 0x1f6f8b, roughness: 0.8 });
+  const skin = new THREE.MeshStandardMaterial({ color: 0xc68863, roughness: 0.9 });
+  const pants = new THREE.MeshStandardMaterial({ color: 0x2c2f33, roughness: 0.9 });
+  const body = new THREE.Mesh(new THREE.BoxGeometry(0.62, 0.78, 0.36), jacket);
+  body.position.y = 1.08;
+  body.castShadow = true;
+  g.add(body);
+  const head = new THREE.Mesh(new THREE.SphereGeometry(0.26, 12, 10), skin);
+  head.position.y = 1.68;
+  head.castShadow = true;
+  g.add(head);
+  const cap = new THREE.Mesh(new THREE.CylinderGeometry(0.27, 0.28, 0.1, 12),
+    new THREE.MeshStandardMaterial({ color: 0xd94f3d, roughness: 0.7 }));
+  cap.position.y = 1.88;
+  g.add(cap);
+  for (const s of [-0.16, 0.16]) {
+    const leg = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.72, 0.24), pants);
+    leg.position.set(s, 0.36, 0);
+    leg.castShadow = true;
+    g.add(leg);
+  }
+  for (const s of [-0.38, 0.38]) {
+    const arm = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.66, 0.18), jacket);
+    arm.position.set(s, 1.08, 0);
+    g.add(arm);
   }
   return g;
 }
 
-export function createPlayer(scene, city) {
-  const mesh = buildPlayerMesh();
-  mesh.position.copy(city.spawn.player);
-  scene.add(mesh);
-  return {
-    mesh,
-    pos: mesh.position,
-    heading: 0,
-    speed: 0,
-    health: CONFIG.player.health,
-    cash: CONFIG.player.startCash,
-    ammo: CONFIG.player.startAmmo,
-    inVehicle: false,
-    vehicle: null,
-    dead: false,
-    walkPhase: 0,
-  };
-}
-
-export function updatePlayer(world, dt, input, camYaw) {
-  const { player, city } = world;
-  if (player.inVehicle || player.dead) return;
-  const run = input.run ? CONFIG.player.runSpeed : CONFIG.player.walkSpeed;
-  let fx = 0, fz = 0;
-  if (input.forward) { fx += Math.sin(camYaw); fz += Math.cos(camYaw); }
-  if (input.back) { fx -= Math.sin(camYaw); fz -= Math.cos(camYaw); }
-  if (input.left) { fx -= Math.cos(camYaw); fz += Math.sin(camYaw); }
-  if (input.right) { fx += Math.cos(camYaw); fz -= Math.sin(camYaw); }
-  const len = Math.hypot(fx, fz);
-  if (len > 0.01) {
-    fx /= len; fz /= len;
-    const targetHeading = Math.atan2(fx, fz);
-    let dh = targetHeading - player.heading;
-    while (dh > Math.PI) dh -= Math.PI * 2;
-    while (dh < -Math.PI) dh += Math.PI * 2;
-    player.heading += dh * Math.min(1, dt * 12);
-    player.speed = run;
-    player.walkPhase += dt * run * 1.4;
-    const nx = player.pos.x + fx * run * dt;
-    const nz = player.pos.z + fz * run * dt;
-    const res = collideCircle(city, nx, nz, CONFIG.player.radius);
-    player.pos.x = res.x; player.pos.z = res.z;
-    // Walk bob.
-    player.mesh.position.y = Math.abs(Math.sin(player.walkPhase)) * 0.08;
-  } else {
-    player.speed = 0;
-    player.mesh.position.y = 0;
+export class Player {
+  constructor(scene) {
+    this.scene = scene;
+    this.x = PLAYER_SPAWN.x;
+    this.z = PLAYER_SPAWN.z;
+    this.heading = PLAYER_SPAWN.heading ?? 0;
+    this.speed = 0;
+    this.walkPhase = 0;
+    this.vehicle = null;
+    this.cash = 250;
+    this.ammo = 48;
+    this.health = 100;
+    this.mesh = makePlayerMesh();
+    this.mesh.position.set(this.x, 0, this.z);
+    this.mesh.rotation.y = this.heading;
+    scene.add(this.mesh);
   }
-  player.mesh.rotation.y = player.heading;
-  world.speedKmh = player.speed * 3.6;
-}
 
-export function damagePlayer(world, amount, source) {
-  const { player } = world;
-  if (player.dead || player.inVehicle) return;
-  player.health -= amount;
-  world.hud.flashDamage();
-  if (player.health <= 0) {
-    player.health = 0;
-    player.dead = true;
-    world.hud.showGameOver('Kamu tertangkap / tewas di jalanan Teluk Kirana.');
-    world.audio.siren(false);
+  get position() {
+    return { x: this.x, z: this.z, heading: this.heading };
+  }
+
+  update(dt, input, colliders, cameraYaw) {
+    if (this.vehicle) {
+      this.mesh.visible = false;
+      return;
+    }
+    this.mesh.visible = true;
+    // Heading is always a finite number; guard once per frame, never delete.
+    if (!Number.isFinite(this.heading)) this.heading = 0;
+    const run = input.shift ? CONFIG.playerRunSpeed : CONFIG.playerWalkSpeed;
+    let mx = 0;
+    let mz = 0;
+    if (input.forward) { mx += Math.sin(cameraYaw); mz += Math.cos(cameraYaw); }
+    if (input.back) { mx -= Math.sin(cameraYaw); mz -= Math.cos(cameraYaw); }
+    if (input.left) { mx -= Math.cos(cameraYaw); mz += Math.sin(cameraYaw); }
+    if (input.right) { mx += Math.cos(cameraYaw); mz -= Math.sin(cameraYaw); }
+    const len = Math.sqrt(mx * mx + mz * mz);
+    if (len > 0.001) {
+      mx /= len;
+      mz /= len;
+      this.speed = run;
+      this.heading = Math.atan2(mx, mz);
+      const pos = { x: this.x + mx * run * dt, z: this.z + mz * run * dt };
+      resolveCircleCollision(colliders, pos, 0.6);
+      this.x = clampNumber(pos.x, -212, 218);
+      this.z = clampNumber(pos.z, -212, 212);
+      this.walkPhase += dt * run * 1.6;
+    } else {
+      this.speed = 0;
+    }
+    this.mesh.position.set(this.x, Math.abs(Math.sin(this.walkPhase)) * 0.05, this.z);
+    this.mesh.rotation.y = this.heading;
+  }
+
+  enterVehicle(vehicle) {
+    if (!vehicle) return false;
+    this.vehicle = vehicle;
+    vehicle.driven = true;
+    vehicle.attachHeadlight();
+    this.mesh.visible = false;
+    return true;
+  }
+
+  exitVehicle() {
+    if (!this.vehicle) return false;
+    const v = this.vehicle;
+    this.vehicle = null;
+    v.driven = false;
+    v.detachHeadlight();
+    v.speed = 0;
+    // Step out to the side of the vehicle, clear of its body.
+    this.x = v.x - Math.cos(v.heading) * 2.4;
+    this.z = v.z + Math.sin(v.heading) * 2.4;
+    if (!Number.isFinite(this.heading)) this.heading = 0;
+    this.mesh.visible = true;
+    this.mesh.position.set(this.x, 0, this.z);
+    return true;
   }
 }

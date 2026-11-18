@@ -1,211 +1,213 @@
-// Story jobs and side work: eight chained jobs from Pak Darma, Raka and
-// Bu Lastri, plus taxi fares and a street race. A glowing beacon marks the
-// current objective; reaching it advances the step, pays out, and opens the
-// next job. Dialogue plays through the HUD dialog panel.
-import * as THREE from 'three';
-import { CONFIG } from './config.js';
+// Teluk Kirana — story: 8 jobs with dialogue, plus taxi fares and street races.
+// Each job: talk to the contact, drive to the marker, do the deed, get paid.
+import { JOB_REWARDS } from './config.js';
 
-function buildBeacon(scene) {
-  const g = new THREE.Group();
-  const beam = new THREE.Mesh(
-    new THREE.CylinderGeometry(1.6, 1.6, 60, 12, 1, true),
-    new THREE.MeshBasicMaterial({ color: 0xffd24a, transparent: true, opacity: 0.28, side: THREE.DoubleSide, depthWrite: false }),
-  );
-  beam.position.y = 30; g.add(beam);
-  const ring = new THREE.Mesh(
-    new THREE.RingGeometry(2.2, 3.4, 24),
-    new THREE.MeshBasicMaterial({ color: 0xffd24a, transparent: true, opacity: 0.7, side: THREE.DoubleSide }),
-  );
-  ring.rotation.x = -Math.PI / 2; ring.position.y = 0.15; g.add(ring);
-  g.visible = false;
-  scene.add(g);
-  return g;
-}
+export const JOBS = [
+  {
+    id: 'j1', title: 'Pagi di Pasar Lama', giver: 'Bu Ratna — pedagang ikan',
+    brief: 'Antar keranjang ikan segar Bu Ratna ke warung di Kota Tua sebelum pasar tutup.',
+    dialogue: [
+      'Bu Ratna: "Nak, ikan-ikan ini harus sampai di warung Pak Dedi sebelum jam sepuluh."',
+      'Bu Ratna: "Motor di depan itu bisa kau pakai. Hati-hati di jalan, jangan sampai tumpah."',
+      'Kamu: "Beress, Bu. Lima menit sampai."',
+    ],
+    target: { x: -88, z: -64, label: 'Warung Pak Dedi — Kota Tua' },
+    reward: JOB_REWARDS[0], wantedOnComplete: 0,
+  },
+  {
+    id: 'j2', title: 'Paket Tengah Malam', giver: 'Dimas — kurir pelabuhan',
+    brief: 'Ambil paket dari gudang pelabuhan dan antar ke dermaga marina tanpa menarik perhatian.',
+    dialogue: [
+      'Dimas: "Paketnya di gudang 7. Jangan buka, jangan tanya isinya."',
+      'Dimas: "Polisi patroli di jalan pelabuhan — lewat jalan belakang saja."',
+      'Kamu: "Diam-diam saja. Aku yang urus."',
+    ],
+    target: { x: -140, z: 150, label: 'Dermaga Marina' },
+    reward: JOB_REWARDS[1], wantedOnComplete: 1,
+  },
+  {
+    id: 'j3', title: 'Utang si Bos Salon', giver: 'Sinta — pemilik salon Kirana',
+    brief: 'Tagih utang Rp2 juta dari preman salon di Bukit Kirana. Boleh pakai cara keras.',
+    dialogue: [
+      'Sinta: "Dia janji bayar minggu lalu. Sekarang malah pamer motor baru."',
+      'Sinta: "Ambil uangnya. Kalau dia melawan, kau tahu harus apa."',
+      'Kamu: "Aku ambil uangnya, dan motornya sekalian kalau perlu."',
+    ],
+    target: { x: 96, z: -128, label: 'Salon Sinta — Bukit Kirana' },
+    reward: JOB_REWARDS[2], wantedOnComplete: 1,
+  },
+  {
+    id: 'j4', title: 'Kabur dari Razia', giver: 'Raka — pembalap liar',
+    brief: 'Razia besar di jembatan. Bawa Raka menyeberang ke pelabuhan sebelum jalan ditutup.',
+    dialogue: [
+      'Raka: "Polisi sudah pasang roadblock di ujung jembatan, bro!"',
+      'Raka: "Kau yang nyetir. Aku yang tunjukin jalan tikus lewat dermaga."',
+      'Kamu: "Pegang yang kuat. Kita lewat bawah jembatan."',
+    ],
+    target: { x: 235, z: -30, label: 'Dermaga Timur — Pelabuhan' },
+    reward: JOB_REWARDS[3], wantedOnComplete: 2,
+  },
+  {
+    id: 'j5', title: 'Kontainer Hilang', giver: 'Kapten Agus — mandor pelabuhan',
+    brief: 'Satu kontainer muatan "hilang" dari manifest. Temukan dan bawa ke gudang 12.',
+    dialogue: [
+      'Kapten Agus: "Kontainer biru nomor 412. Ada yang mindahin diam-diam semalam."',
+      'Kapten Agus: "Cek di antara tumpukan timur. Jangan ribut-ribut."',
+      'Kamu: "Kontainer biru 412. Ketemu, langsung kubawa."',
+    ],
+    target: { x: 210, z: -70, label: 'Gudang 12 — Pelabuhan' },
+    reward: JOB_REWARDS[4], wantedOnComplete: 1,
+  },
+  {
+    id: 'j6', title: 'Balapan Jalan Raya', giver: 'Raka — pembalap liar',
+    brief: 'Balapan resmi tidak resmi: tiga checkpoint keliling kota, kalahkan mobil Raka.',
+    dialogue: [
+      'Raka: "Kau menang kemarin cuma beruntung. Sekarang buktikan lagi."',
+      'Raka: "Tiga checkpoint: pasar, marina, lalu kembali ke jembatan."',
+      'Kamu: "Siap-siap kalah lagi, Raka."',
+    ],
+    target: { x: 252, z: 0, label: 'Garis finis — Jembatan Kirana' },
+    reward: JOB_REWARDS[5], wantedOnComplete: 2,
+  },
+  {
+    id: 'j7', title: 'Orang Dalam', giver: 'Bu Ratna — pedagang ikan',
+    brief: 'Seseorang membocorkan jadwal pengiriman ke polisi. Cari tahu siapa di kantor pelabuhan.',
+    dialogue: [
+      'Bu Ratna: "Tiga kali pengiriman kita kena razia. Pasti ada yang bocor dari dalam."',
+      'Bu Ratna: "Kantor pelabuhan, lantai dua. Cari dokumen jadwalnya."',
+      'Kamu: "Kalau ketemu pengkhianatnya, dia berurusan denganku."',
+    ],
+    target: { x: 180, z: 60, label: 'Kantor Pelabuhan' },
+    reward: JOB_REWARDS[6], wantedOnComplete: 2,
+  },
+  {
+    id: 'j8', title: 'Heat Season', giver: 'Semua orang di Teluk Kirana',
+    brief: 'Finale: bawa muatan terakhir melintasi kota saat polisi di level tertinggi.',
+    dialogue: [
+      'Dimas: "Ini pengiriman terakhir musim ini. Setelah ini kita bersih."',
+      'Sinta: "Seluruh kota bakal panas. Kau yakin bisa?"',
+      'Kamu: "Teluk Kirana milik kita malam ini. Gas!"',
+    ],
+    target: { x: 0, z: 0, label: 'Alun-alun Pasar Lama' },
+    reward: JOB_REWARDS[7], wantedOnComplete: 3,
+  },
+];
 
-export function createJobs(scene) {
-  return {
-    scene,
-    beacon: buildBeacon(scene),
-    index: 0, step: 0, active: false, done: false,
-    dialogQueue: [], dialogTimer: 0,
-    side: null, // { kind: 'taxi'|'race', ... }
-    raceTimer: 0, raceCheckpoint: 0,
-    completedCount: 0,
-  };
-}
-
-export function currentJobDef(world) {
-  return CONFIG.jobs[world.jobs.index] || null;
-}
-
-export function startJob(world, index) {
-  const jobs = world.jobs;
-  jobs.index = index;
-  jobs.step = 0;
-  jobs.active = true;
-  jobs.done = false;
-  const def = CONFIG.jobs[index];
-  jobs.dialogQueue = def.dialog.slice();
-  jobs.dialogTimer = 0;
-  moveBeaconToStep(world);
-  world.hud.setObjective(`${def.title} — ${def.steps[0].text}`);
-  world.hud.toast(`Job baru: ${def.title}`);
-  world.audio.blip();
-}
-
-function moveBeaconToStep(world) {
-  const jobs = world.jobs;
-  const def = currentJobDef(world);
-  if (!def || !jobs.active) { jobs.beacon.visible = false; return; }
-  const step = def.steps[jobs.step];
-  if (!step) { jobs.beacon.visible = false; return; }
-  jobs.beacon.position.set(step.at[0], 0, step.at[1]);
-  jobs.beacon.visible = true;
-}
-
-export function objectiveText(world) {
-  const jobs = world.jobs;
-  if (jobs.side) {
-    if (jobs.side.kind === 'taxi') return `Taksi: antar penumpang ke ${jobs.side.destName} (${jobs.side.left} tersisa)`;
-    if (jobs.side.kind === 'race') return `Balapan: checkpoint ${jobs.raceCheckpoint + 1}/3 — ${Math.max(0, jobs.raceTimer).toFixed(0)} dtk`;
+export class JobManager {
+  constructor(onEvent) {
+    this.onEvent = onEvent || (() => {});
+    this.activeIndex = -1;
+    this.stage = 'idle'; // idle | dialogue | go | done
+    this.dialogueLine = 0;
+    this.completed = new Set();
+    this.taxi = null;
+    this.race = null;
   }
-  const def = currentJobDef(world);
-  if (!def) return 'Semua job selesai — Teluk Kirana milikmu.';
-  if (!jobs.active) return `Job berikutnya: ${def.title} — tekan J untuk mulai`;
-  const step = def.steps[jobs.step];
-  return step ? `${def.title}: ${step.text}` : def.title;
-}
 
-export function updateJobs(world, dt) {
-  const jobs = world.jobs;
-  // Dialogue lines, one at a time.
-  if (jobs.dialogQueue.length > 0) {
-    jobs.dialogTimer -= dt;
-    if (jobs.dialogTimer <= 0) {
-      const line = jobs.dialogQueue.shift();
-      world.hud.showDialog(line);
-      jobs.dialogTimer = 4.5;
+  get activeJob() {
+    return this.activeIndex >= 0 ? JOBS[this.activeIndex] : null;
+  }
+
+  startJob(index) {
+    if (index < 0 || index >= JOBS.length) return null;
+    if (this.completed.has(JOBS[index].id)) return null;
+    this.activeIndex = index;
+    this.stage = 'dialogue';
+    this.dialogueLine = 0;
+    this.onEvent('job-start', JOBS[index]);
+    return JOBS[index];
+  }
+
+  advanceDialogue() {
+    const job = this.activeJob;
+    if (!job || this.stage !== 'dialogue') return false;
+    this.dialogueLine += 1;
+    if (this.dialogueLine >= job.dialogue.length) {
+      this.stage = 'go';
+      this.onEvent('job-go', job);
+      return true;
     }
+    return false;
   }
-  // Beacon pulse.
-  if (jobs.beacon.visible) {
-    const s = 1 + Math.sin(world.time * 3) * 0.12;
-    jobs.beacon.scale.set(s, 1, s);
+
+  get currentDialogue() {
+    const job = this.activeJob;
+    if (!job || this.stage !== 'dialogue') return null;
+    return job.dialogue[this.dialogueLine] || null;
   }
-  if (jobs.side) { updateSide(world, dt); return; }
-  const def = currentJobDef(world);
-  if (!def || !jobs.active) return;
-  const step = def.steps[jobs.step];
-  if (!step) return;
-  const d = Math.hypot(world.player.pos.x - step.at[0], world.player.pos.z - step.at[1]);
-  if (d < step.radius) {
-    jobs.step += 1;
-    world.audio.blip();
-    if (jobs.step >= def.steps.length) {
-      // Job complete.
-      world.player.cash += def.reward;
-      jobs.completedCount += 1;
-      jobs.active = false;
-      jobs.beacon.visible = false;
-      world.hud.showDialog(`${def.giver}: "Bagus. $${def.reward} buatmu."`);
-      world.hud.toast(`Job selesai! +$${def.reward}`);
-      world.save.saveGame(world);
-      const next = jobs.index + 1;
-      if (next < CONFIG.jobs.length) {
-        jobs.index = next;
-        world.hud.setObjective(`Job berikutnya: ${CONFIG.jobs[next].title} — tekan J untuk mulai`);
-      } else {
-        jobs.done = true;
-        world.hud.setObjective('Semua job selesai — Teluk Kirana milikmu.');
-        world.hud.showDialog('Pak Darma: "Kamu legenda Teluk Kirana sekarang."');
+
+  // Returns the finished job when the player reaches the marker, else null.
+  update(playerPos) {
+    if (this.stage !== 'go' || !this.activeJob) return null;
+    const t = this.activeJob.target;
+    const dx = playerPos.x - t.x;
+    const dz = playerPos.z - t.z;
+    if (dx * dx + dz * dz < 12 * 12) {
+      const job = this.activeJob;
+      this.completed.add(job.id);
+      this.stage = 'done';
+      this.activeIndex = -1;
+      this.onEvent('job-done', job);
+      return job;
+    }
+    return null;
+  }
+
+  nextJobIndex() {
+    for (let i = 0; i < JOBS.length; i++) {
+      if (!this.completed.has(JOBS[i].id)) return i;
+    }
+    return -1;
+  }
+
+  startTaxi(pickup, dropoff, fare) {
+    this.taxi = { pickup, dropoff, fare, stage: 'pickup' };
+    this.onEvent('taxi-start', this.taxi);
+    return this.taxi;
+  }
+
+  updateTaxi(playerPos) {
+    if (!this.taxi) return null;
+    const target = this.taxi.stage === 'pickup' ? this.taxi.pickup : this.taxi.dropoff;
+    const dx = playerPos.x - target.x;
+    const dz = playerPos.z - target.z;
+    if (dx * dx + dz * dz < 10 * 10) {
+      if (this.taxi.stage === 'pickup') {
+        this.taxi.stage = 'dropoff';
+        this.onEvent('taxi-pickup', this.taxi);
+        return 'picked-up';
       }
-    } else {
-      moveBeaconToStep(world);
-      world.hud.setObjective(`${def.title} — ${def.steps[jobs.step].text}`);
+      const done = this.taxi;
+      this.taxi = null;
+      this.onEvent('taxi-done', done);
+      return 'delivered';
     }
+    return null;
   }
-}
 
-// ---- Side activities ----
+  startRace(checkpoints) {
+    this.race = { checkpoints, index: 0, time: 0, finished: false };
+    this.onEvent('race-start', this.race);
+    return this.race;
+  }
 
-export function startTaxi(world) {
-  const jobs = world.jobs;
-  if (jobs.side) return;
-  const dests = [
-    { name: 'Perumahan', at: [208, 160] },
-    { name: 'Pusat Kota', at: [64, -64] },
-    { name: 'Pelabuhan', at: [0, 272] },
-  ];
-  const dest = dests[jobs.completedCount % dests.length];
-  jobs.side = { kind: 'taxi', left: 3, dest, destName: dest.name };
-  jobs.beacon.position.set(dest.at[0], 0, dest.at[1]);
-  jobs.beacon.visible = true;
-  world.hud.toast('Taksi: 3 penumpang menunggu. Antar mereka!');
-  world.hud.showDialog('Penumpang: "Ke Perumahan, cepat ya!"');
-}
-
-export function startRace(world) {
-  const jobs = world.jobs;
-  if (jobs.side) return;
-  jobs.side = { kind: 'race', checkpoints: [[-64, 272], [192, 256], [-224, 288]] };
-  jobs.raceCheckpoint = 0;
-  jobs.raceTimer = 120;
-  jobs.beacon.position.set(-64, 0, 272);
-  jobs.beacon.visible = true;
-  world.hud.toast('Street race! 3 checkpoint, 120 detik.');
-}
-
-function updateSide(world, dt) {
-  const jobs = world.jobs;
-  const side = jobs.side;
-  const px = world.player.pos.x, pz = world.player.pos.z;
-  if (side.kind === 'taxi') {
-    const d = Math.hypot(px - side.dest.at[0], pz - side.dest.at[1]);
-    if (d < 10) {
-      side.left -= 1;
-      world.player.cash += 40;
-      world.audio.blip();
-      if (side.left <= 0) {
-        jobs.side = null;
-        jobs.beacon.visible = false;
-        world.hud.toast('Taksi selesai! +$120');
-        world.hud.setObjective(objectiveText(world));
-      } else {
-        const dests = [
-          { name: 'Pasar Ikan', at: [-176, -32] },
-          { name: 'Pinggiran', at: [-208, 176] },
-          { name: 'Dermaga Barat', at: [-224, 288] },
-        ];
-        const dest = dests[(3 - side.left) % dests.length];
-        side.dest = dest; side.destName = dest.name;
-        jobs.beacon.position.set(dest.at[0], 0, dest.at[1]);
-        world.hud.toast(`Penumpang berikutnya: ${dest.name} (+$40)`);
+  updateRace(dt, playerPos) {
+    if (!this.race || this.race.finished) return null;
+    this.race.time += dt;
+    const cp = this.race.checkpoints[this.race.index];
+    if (!cp) return null;
+    const dx = playerPos.x - cp.x;
+    const dz = playerPos.z - cp.z;
+    if (dx * dx + dz * dz < 12 * 12) {
+      this.race.index += 1;
+      if (this.race.index >= this.race.checkpoints.length) {
+        this.race.finished = true;
+        this.onEvent('race-done', this.race);
+        return 'finished';
       }
+      this.onEvent('race-checkpoint', this.race);
+      return 'checkpoint';
     }
-  } else if (side.kind === 'race') {
-    jobs.raceTimer -= dt;
-    const cp = side.checkpoints[jobs.raceCheckpoint];
-    const d = Math.hypot(px - cp[0], pz - cp[1]);
-    if (d < 10) {
-      jobs.raceCheckpoint += 1;
-      world.audio.blip();
-      if (jobs.raceCheckpoint >= side.checkpoints.length) {
-        const bonus = Math.max(50, Math.round(jobs.raceTimer) * 2);
-        world.player.cash += bonus;
-        jobs.side = null;
-        jobs.beacon.visible = false;
-        world.hud.toast(`Menang balapan! +$${bonus}`);
-        world.hud.setObjective(objectiveText(world));
-      } else {
-        const next = side.checkpoints[jobs.raceCheckpoint];
-        jobs.beacon.position.set(next[0], 0, next[1]);
-      }
-    }
-    if (jobs.raceTimer <= 0) {
-      jobs.side = null;
-      jobs.beacon.visible = false;
-      world.hud.toast('Balapan gagal — waktu habis.');
-      world.hud.setObjective(objectiveText(world));
-    }
+    return null;
   }
 }

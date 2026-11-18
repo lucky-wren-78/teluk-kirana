@@ -1,62 +1,73 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="id">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Teluk Kirana: Heat Season — Open World Crime</title>
+<title>Teluk Kirana: Heat Season — open-world crime game</title>
+<link rel="icon" href="data:,">
 <link rel="stylesheet" href="./style.css">
 <script type="importmap">
 { "imports": { "three": "./vendor/three.module.min.js" } }
 </script>
 </head>
 <body>
-<div id="app">
-  <canvas id="game" aria-label="Teluk Kirana: kota pelabuhan tropis 3D. WASD untuk bergerak, E untuk masuk mobil, klik untuk menembak."></canvas>
-  <div id="damage-flash"></div>
+<canvas id="game-canvas"></canvas>
+
+<div id="hud" class="hidden">
+  <div id="hud-top-left">
+    <div id="hud-cash">$250</div>
+    <div id="hud-wanted">☆☆☆☆☆</div>
+    <div id="hud-clock">10:00</div>
+    <div id="hud-radio">♪ KIRANA FM 98.2 — pop tropis</div>
+  </div>
+  <div id="hud-top-right">
+    <canvas id="minimap" width="168" height="168"></canvas>
+    <div id="hud-healthbar"><div id="hud-health"></div></div>
+    <div id="hud-ammo">▸ 48</div>
+  </div>
+  <div id="hud-bottom-left">
+    <div id="hud-objective">Tekan 1–8 untuk mulai job, atau jelajahi kota.</div>
+    <div id="hud-jobs"></div>
+  </div>
+  <div id="hud-bottom-right">
+    <div id="hud-speed">JALAN KAKI</div>
+    <div id="hud-controls">WASD jalan / nyetir · E masuk mobil / dialog · F tembak · Q ganti radio · R radio on/off · H simpan</div>
+    <button id="save-btn" type="button">Simpan (H)</button>
+    <button id="radio-btn" type="button">Ganti Radio (Q)</button>
+  </div>
+  <div id="interact"></div>
   <div id="crosshair">+</div>
-
-  <div id="hud" class="hidden">
-    <div id="top-left">
-      <div id="stars" aria-label="Wanted level">☆☆☆☆☆</div>
-      <div id="health"><div id="health-fill"></div></div>
-      <div id="cash-row"><span id="cash">$250</span><span id="ammo">◉ 12</span></div>
-      <div id="clock-row"><span id="clock">08:00</span><span id="weather">☀ Cerah</span></div>
-    </div>
-    <div id="top-right">
-      <canvas id="minimap" width="180" height="180"></canvas>
-      <div id="radio">KIRANA FM</div>
-    </div>
-    <div id="objective"></div>
-    <div id="dialog" class="hidden"></div>
-    <div id="toast" class="hidden"></div>
-    <div id="prompt" class="hidden"></div>
-    <div id="bottom-right">
-      <div id="speed">0 km/h</div>
-      <div id="controls-hint">WASD jalan/nyetir · E naik/turun · Klik tembak · R isi peluru · Q radio · J job · T taksi · G balapan · P jeda</div>
-    </div>
-  </div>
-
-  <div id="start-screen">
-    <div class="panel">
-      <h1>TELUK KIRANA</h1>
-      <p class="tagline">Heat Season — kota pelabuhan tropis, 5 distrik, 8 story job</p>
-      <p class="desc">Jelajahi kota dengan berjalan kaki, mobil, atau motor. Bajak kendaraan,
-      kerjakan job untuk Pak Darma, dan hindari polisi 5 bintang — ada helikopter
-      dan roadblock menunggumu di level tinggi.</p>
-      <button id="start-btn">▶ Mulai Bermain</button>
-      <button id="continue-btn" class="hidden">Lanjutkan Save</button>
-      <p class="keys">WASD gerak · Mouse arah kamera · Klik tembak · E naik/turun kendaraan ·
-      R isi peluru · Q ganti radio · J mulai job · T taksi · G street race · P jeda · M mute</p>
-    </div>
-  </div>
-
-  <div id="paused" class="hidden"><div class="panel"><h2>Jeda</h2><p>Tekan P untuk lanjut.</p></div></div>
-  <div id="gameover" class="hidden">
-    <div class="panel"><h2 id="gameover-title">GAME OVER</h2><p id="gameover-text"></p>
-    <button id="retry-btn">Main Lagi</button></div>
+  <div id="toast"></div>
+  <div id="dialogue">
+    <div id="dialogue-text"></div>
+    <div id="dialogue-hint">Tekan E untuk lanjut</div>
   </div>
 </div>
-<p id="status" role="status" aria-live="polite"></p>
+
+<div id="start-screen">
+  <div class="panel">
+    <h1>TELUK KIRANA</h1>
+    <h2>HEAT SEASON</h2>
+    <p class="tagline">Kota pelabuhan tropis. Delapan job. Lima bintang wanted.<br>
+    Bajak mobilnya, kabur dari polisinya, kuasai musim panas ini.</p>
+    <div class="job-list">
+      <button type="button" data-job="0">1 · Pagi di Pasar Lama</button>
+      <button type="button" data-job="1">2 · Paket Tengah Malam</button>
+      <button type="button" data-job="2">3 · Utang si Bos Salon</button>
+      <button type="button" data-job="3">4 · Kabur dari Razia</button>
+      <button type="button" data-job="4">5 · Kontainer Hilang</button>
+      <button type="button" data-job="5">6 · Balapan Jalan Raya</button>
+      <button type="button" data-job="6">7 · Orang Dalam</button>
+      <button type="button" data-job="7">8 · Heat Season</button>
+    </div>
+    <button id="start-btn" type="button">▶ MULAI MAIN</button>
+    <button id="continue-btn" type="button" class="hidden">↻ LANJUTKAN SAVE</button>
+    <p class="keys">WASD bergerak / menyetir · E masuk kendaraan &amp; dialog · F tembak · Q radio · H simpan · drag mouse untuk kamera</p>
+    <p class="credit">Game orisinal — kota, karakter, dan cerita buatan sendiri. Dibangun dengan three.js, tanpa aset dari game komersial mana pun.</p>
+  </div>
+</div>
+
+<div id="fatal"></div>
 <script type="module" src="./src/main.js"></script>
 </body>
 </html>
