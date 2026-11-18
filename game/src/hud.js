@@ -1,240 +1,189 @@
-// hud.js - the heads-up display for Teluk Kirana.
-// Updates the DOM bars and labels (health, wanted stars, cash,
-// respect, speed, radio, objective) and draws the live 2D minimap:
-// roads, the player arrow, cars, police, pedestrians hints and the
-// objective marker, with north fixed at the top.
+// hud.js — everything drawn over the 3D view: wanted stars, cash and
+// respect, the health bar, the clock, notifications, the dialogue box, and
+// the circular real-time minimap with player, objective, police and
+// activity blips.
 
-import { GRID, PITCH, CITY_HALF, gridToWorld, districtAt } from './config.js';
-import { clamp } from './rng.js';
+import { CITY } from './config.js';
 
 export class Hud {
   constructor() {
-    this.el = {};
-    const ids = [
-      'healthFill', 'wantedStars', 'cashLabel', 'respectLabel', 'speedLabel',
-      'radioLabel', 'objectiveLabel', 'districtLabel', 'jobBanner', 'bannerTitle',
-      'bannerSub', 'dialogBox', 'dialogName', 'dialogText', 'toast',
-      'timerLabel', 'arrestFill', 'promptLabel',
-    ];
-    for (const id of ids) this.el[id] = document.getElementById(id);
-    this.map = document.getElementById('minimap');
-    this.mapCtx = this.map ? this.map.getContext('2d') : null;
-    this.bannerUntil = 0;
-    this.toastUntil = 0;
-    this.dialogLines = [];
-    this.dialogIdx = 0;
-    this.dialogDone = null;
-    this.time = 0;
+    this.el = {
+      hud: document.getElementById('hud'),
+      wanted: document.getElementById('wanted'),
+      clock: document.getElementById('clock'),
+      weather: document.getElementById('weather'),
+      cash: document.getElementById('cash'),
+      respect: document.getElementById('respect'),
+      healthfill: document.getElementById('healthfill'),
+      joblabel: document.getElementById('joblabel'),
+      minimap: document.getElementById('minimap'),
+      speedo: document.getElementById('speedo'),
+      radio: document.getElementById('radio'),
+      notify: document.getElementById('notify'),
+      dialogue: document.getElementById('dialogue'),
+      dlgName: document.getElementById('dlg-name'),
+      dlgText: document.getElementById('dlg-text'),
+      prompt: document.getElementById('prompt'),
+      crosshair: document.getElementById('crosshair'),
+      damageflash: document.getElementById('damageflash'),
+    };
+    this.mapCtx = this.el.minimap.getContext('2d');
+    this.lastStars = -1;
+    this.dialogueQueue = null;
+    this.dialogueDone = null;
+    this.bustShown = 0;
   }
 
-  showBanner(title, sub, seconds = 3.4) {
-    if (!this.el.jobBanner) return;
-    this.el.bannerTitle.textContent = title;
-    this.el.bannerSub.textContent = sub || '';
-    this.el.jobBanner.classList.add('show');
-    this.bannerUntil = this.time + seconds;
+  show() { this.el.hud.classList.remove('hidden'); }
+
+  setStars(stars, bustProgress) {
+    if (stars !== this.lastStars || Math.abs(bustProgress - this.bustShown) > 0.05) {
+      this.lastStars = stars;
+      this.bustShown = bustProgress;
+      let html = '';
+      for (let i = 1; i <= 5; i++) {
+        html += `<span class="${i <= stars ? 'star-on' : 'star-off'}">★</span>`;
+      }
+      if (bustProgress > 0.02) html += `<span style="color:#ff5040;font-size:15px;letter-spacing:1px"> BUSTING ${Math.round(bustProgress * 100)}%</span>`;
+      this.el.wanted.innerHTML = html;
+    }
   }
 
-  showToast(text, seconds = 2.6) {
-    if (!this.el.toast) return;
-    this.el.toast.textContent = text;
-    this.el.toast.classList.add('show');
-    this.toastUntil = this.time + seconds;
+  setStats(cash, respect, health, jobText) {
+    this.el.cash.textContent = `$${Math.round(cash)}`;
+    this.el.respect.textContent = `RESPECT ${Math.round(respect)}`;
+    this.el.healthfill.style.width = `${Math.max(0, Math.min(100, health))}%`;
+    this.el.joblabel.textContent = jobText || '';
   }
 
-  // Dialog box: shows lines one at a time; advance with E or click.
-  showDialog(lines, onDone) {
-    this.dialogLines = lines || [];
-    this.dialogIdx = 0;
-    this.dialogDone = onDone || null;
-    this.renderDialog();
+  setClock(hour, raining) {
+    const hh = Math.floor(hour);
+    const mm = Math.floor((hour - hh) * 60);
+    this.el.clock.textContent = `${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`;
+    this.el.weather.textContent = raining ? '☂ RAIN' : '';
   }
 
-  renderDialog() {
-    if (!this.el.dialogBox) return;
-    if (this.dialogIdx >= this.dialogLines.length) {
-      this.el.dialogBox.classList.remove('show');
-      const done = this.dialogDone;
-      this.dialogDone = null;
+  setSpeed(kmh, driving) {
+    this.el.speedo.classList.toggle('hidden', !driving);
+    if (driving) this.el.speedo.textContent = `${Math.round(Math.abs(kmh))} km/h`;
+    this.el.crosshair.classList.toggle('hidden', driving);
+  }
+
+  setRadio(name) {
+    this.el.radio.classList.toggle('hidden', !name);
+    if (name) this.el.radio.textContent = `♪ ${name}`;
+  }
+
+  notify(text, ms = 3400) {
+    const note = document.createElement('div');
+    note.className = 'note';
+    note.textContent = text;
+    this.el.notify.appendChild(note);
+    setTimeout(() => note.remove(), ms);
+    while (this.el.notify.children.length > 3) this.el.notify.firstChild.remove();
+  }
+
+  setPrompt(text) {
+    if (text) {
+      this.el.prompt.textContent = text;
+      this.el.prompt.classList.remove('hidden');
+    } else {
+      this.el.prompt.classList.add('hidden');
+    }
+  }
+
+  flashDamage() {
+    this.el.damageflash.style.opacity = '1';
+    setTimeout(() => { this.el.damageflash.style.opacity = '0'; }, 90);
+  }
+
+  // Dialogue: queue of [speaker, line]; advance with nextDialogue().
+  startDialogue(lines, onDone) {
+    this.dialogueQueue = [...lines];
+    this.dialogueDone = onDone || null;
+    this.el.dialogue.classList.remove('hidden');
+    this.showNextLine();
+  }
+
+  showNextLine() {
+    const line = this.dialogueQueue && this.dialogueQueue.shift();
+    if (!line) {
+      this.el.dialogue.classList.add('hidden');
+      const done = this.dialogueDone;
+      this.dialogueDone = null;
       if (done) done();
       return;
     }
-    const [name, text] = this.dialogLines[this.dialogIdx];
-    this.el.dialogName.textContent = name;
-    this.el.dialogText.textContent = text;
-    this.el.dialogBox.classList.add('show');
+    this.el.dlgName.textContent = line[0];
+    this.el.dlgText.textContent = line[1];
   }
 
-  advanceDialog() {
-    if (this.dialogLines.length === 0) return false;
-    if (this.dialogIdx < this.dialogLines.length) {
-      this.dialogIdx++;
-      this.renderDialog();
-      return true;
-    }
-    return false;
-  }
+  get dialogueOpen() { return this.dialogueQueue !== null && !this.el.dialogue.classList.contains('hidden'); }
 
-  get dialogOpen() {
-    return this.dialogIdx < this.dialogLines.length;
-  }
-
-  update(dt, view) {
-    this.time += dt;
-    const e = this.el;
-    if (e.healthFill) {
-      e.healthFill.style.width = clamp(view.health, 0, 100) + '%';
-      e.healthFill.style.background = view.health > 35
-        ? 'linear-gradient(90deg,#53d769,#a8e063)' : 'linear-gradient(90deg,#e33,#f66)';
-    }
-    if (e.wantedStars) {
-      let stars = '';
-      for (let i = 0; i < 5; i++) stars += i < view.stars ? '★' : '☆';
-      e.wantedStars.textContent = stars;
-      e.wantedStars.classList.toggle('hot', view.stars >= 3);
-      e.wantedStars.classList.toggle('cooling', view.stars > 0 && view.cooling);
-    }
-    if (e.cashLabel) e.cashLabel.textContent = '$' + Math.round(view.cash).toLocaleString('en-US');
-    if (e.respectLabel) e.respectLabel.textContent = 'Respect ' + Math.round(view.respect);
-    if (e.speedLabel) {
-      e.speedLabel.textContent = view.inCar ? Math.round(view.speedKmh) + ' km/h' : '';
-    }
-    if (e.radioLabel) {
-      e.radioLabel.textContent = view.inCar ? '♪ ' + view.stationName : '';
-    }
-    if (e.objectiveLabel) e.objectiveLabel.textContent = view.objective || '';
-    if (e.districtLabel) {
-      const d = districtAt(view.x, view.z);
-      e.districtLabel.textContent = d.name + ' · ' + d.sub;
-    }
-    if (e.timerLabel) {
-      if (view.timeLeft !== null && view.timeLeft !== undefined) {
-        e.timerLabel.textContent = '⏱ ' + Math.max(0, Math.ceil(view.timeLeft)) + 's';
-        e.timerLabel.classList.add('show');
-      } else {
-        e.timerLabel.classList.remove('show');
-      }
-    }
-    if (e.arrestFill) {
-      const wrap = e.arrestFill.parentElement;
-      if (view.arrest > 0.02) {
-        wrap.classList.add('show');
-        e.arrestFill.style.width = clamp(view.arrest * 100, 0, 100) + '%';
-      } else {
-        wrap.classList.remove('show');
-      }
-    }
-    if (e.promptLabel) {
-      if (view.prompt) {
-        e.promptLabel.textContent = view.prompt;
-        e.promptLabel.classList.add('show');
-      } else {
-        e.promptLabel.classList.remove('show');
-      }
-    }
-    if (this.bannerUntil && this.time > this.bannerUntil) {
-      e.jobBanner.classList.remove('show');
-      this.bannerUntil = 0;
-    }
-    if (this.toastUntil && this.time > this.toastUntil) {
-      e.toast.classList.remove('show');
-      this.toastUntil = 0;
-    }
-    this.drawMinimap(view);
-  }
-
-  drawMinimap(view) {
+  // Minimap: north-up, player-centred, roads as a grid, water on the east
+  // and south edges, gold objective, blue/red police, white traffic dots.
+  drawMinimap(playerPos, playerHeading, objective, blips) {
     const ctx = this.mapCtx;
-    if (!ctx || !this.map) return;
-    const size = this.map.width;
-    const half = size / 2;
-    const scale = half / (CITY_HALF + 40);
-    const toMap = (x, z) => [half + x * scale, half + z * scale];
-
-    // Background: warm land with a teal sea at the south edge.
-    ctx.fillStyle = '#2a2438';
-    ctx.fillRect(0, 0, size, size);
-    ctx.fillStyle = '#1d6f77';
-    const [, seaY] = toMap(0, CITY_HALF + 30);
-    ctx.fillRect(0, seaY, size, size - seaY);
-
-    // Blocks.
-    ctx.fillStyle = '#4a4258';
-    for (let gx = 0; gx < GRID - 1; gx++) {
-      for (let gz = 0; gz < GRID - 1; gz++) {
-        const cx = gridToWorld(gx) + PITCH / 2;
-        const cz = gridToWorld(gz) + PITCH / 2;
-        const [mx, my] = toMap(cx, cz);
-        const w = PITCH * scale * 0.82;
-        ctx.fillRect(mx - w / 2, my - w / 2, w, w);
-      }
-    }
-    // Roads.
-    ctx.strokeStyle = '#8a8296';
-    ctx.lineWidth = Math.max(1.5, 12 * scale);
-    for (let i = 0; i < GRID; i++) {
-      const c = gridToWorld(i);
-      const [a] = toMap(c, 0);
-      ctx.beginPath();
-      ctx.moveTo(a, 0);
-      ctx.lineTo(a, size);
-      ctx.stroke();
-      const [, b] = toMap(0, c);
-      ctx.beginPath();
-      ctx.moveTo(0, b);
-      ctx.lineTo(size, b);
-      ctx.stroke();
-    }
-
-    const dot = (x, z, color, r) => {
-      const [mx, my] = toMap(x, z);
-      ctx.fillStyle = color;
-      ctx.beginPath();
-      ctx.arc(mx, my, r, 0, Math.PI * 2);
-      ctx.fill();
-    };
-
-    // Traffic as pale dots, police as flashing red/blue dots.
-    if (view.traffic) for (const car of view.traffic) dot(car.x, car.z, '#cfc8da', 1.6);
-    if (view.police) {
-      const phase = Math.floor(this.time * 5) % 2 === 0;
-      for (const car of view.police) dot(car.x, car.z, phase ? '#ff4444' : '#4488ff', 2.6);
-    }
-
-    // Objective: a pulsing gold ring.
-    if (view.target) {
-      const [mx, my] = toMap(view.target.x, view.target.z);
-      const r = 5 + Math.sin(this.time * 5) * 1.6;
-      ctx.strokeStyle = '#ffd23c';
-      ctx.lineWidth = 2;
-      ctx.beginPath();
-      ctx.arc(mx, my, r, 0, Math.PI * 2);
-      ctx.stroke();
-      ctx.fillStyle = '#ffd23c';
-      ctx.beginPath();
-      ctx.arc(mx, my, 2.2, 0, Math.PI * 2);
-      ctx.fill();
-    }
-
-    // Player arrow at the centre of attention.
-    const [px, py] = toMap(view.x, view.z);
+    const S = 180;
+    const scale = S / 190; // shows about 190 world metres across
+    ctx.clearRect(0, 0, S, S);
     ctx.save();
-    ctx.translate(px, py);
-    ctx.rotate(view.heading);
+    ctx.beginPath();
+    ctx.arc(S / 2, S / 2, S / 2, 0, Math.PI * 2);
+    ctx.clip();
+    ctx.fillStyle = '#274d2d';
+    ctx.fillRect(0, 0, S, S);
+    const toMap = (x, z) => [S / 2 + (x - playerPos.x) * scale, S / 2 + (z - playerPos.z) * scale];
+    // water
+    ctx.fillStyle = '#14607a';
+    let [wx, wy] = toMap(CITY.halfSize + 10, -500);
+    ctx.fillRect(wx, 0, S, S);
+    let [, sy] = toMap(0, CITY.halfSize + 16);
+    ctx.fillRect(0, sy, S, S);
+    void wy;
+    // roads
+    ctx.strokeStyle = 'rgba(220,220,210,0.5)';
+    ctx.lineWidth = 3;
+    const lines = [-198, -154, -110, -66, -22, 22, 66, 110, 154, 198];
+    for (const l of lines) {
+      const [vx] = toMap(l, 0);
+      ctx.beginPath(); ctx.moveTo(vx, 0); ctx.lineTo(vx, S); ctx.stroke();
+      const [, hz] = toMap(0, l);
+      ctx.beginPath(); ctx.moveTo(0, hz); ctx.lineTo(S, hz); ctx.stroke();
+    }
+    // blips
+    for (const blip of blips) {
+      const [bx, bz] = toMap(blip.x, blip.z);
+      if (bx < -6 || bx > S + 6 || bz < -6 || bz > S + 6) continue;
+      ctx.fillStyle = blip.kind === 'police' ? '#3f7dff' : blip.kind === 'heli' ? '#ff4040' : 'rgba(255,255,255,0.75)';
+      ctx.beginPath();
+      ctx.arc(bx, bz, blip.kind === 'traffic' ? 2 : 3.4, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    // objective
+    if (objective) {
+      const [ox, oz] = toMap(objective.x, objective.z);
+      const cx = Math.max(8, Math.min(S - 8, ox));
+      const cz = Math.max(8, Math.min(S - 8, oz));
+      ctx.fillStyle = '#ffb347';
+      ctx.beginPath();
+      ctx.arc(cx, cz, 5.5, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = '#fff';
+      ctx.lineWidth = 1.6;
+      ctx.stroke();
+    }
+    // player arrow
+    ctx.translate(S / 2, S / 2);
+    ctx.rotate(Math.PI / 2 + playerHeading);
     ctx.fillStyle = '#ffffff';
     ctx.beginPath();
-    ctx.moveTo(0, -6);
-    ctx.lineTo(4, 5);
+    ctx.moveTo(0, -7);
+    ctx.lineTo(4.6, 5);
     ctx.lineTo(0, 2.4);
-    ctx.lineTo(-4, 5);
+    ctx.lineTo(-4.6, 5);
     ctx.closePath();
     ctx.fill();
     ctx.restore();
-
-    // North marker.
-    ctx.fillStyle = '#ffd9a0';
-    ctx.font = 'bold 11px sans-serif';
-    ctx.textAlign = 'center';
-    ctx.fillText('N', half, 13);
   }
 }

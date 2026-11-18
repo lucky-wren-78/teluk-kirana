@@ -1,435 +1,274 @@
-// jobs.js - the story jobs and side activities of Teluk Kirana.
-// Six story jobs in sequence, each with opening dialogue, a clear
-// objective, a 3D light beam marker and cash + respect rewards.
-// Two repeatable side activities run between story jobs: taxi fares
-// and a short checkpoint street race.
+// jobs.js — the story of Heat Season: eight jobs with dialogue, told in
+// order, plus two repeatable side activities (taxi fares and street races).
+//
+// Every job is a chain of stages: talk to someone, drive or walk to a marked
+// place, sometimes with the heat rising. Finishing pays cash and respect and
+// unlocks the next job. All characters are invented for this game.
 
-import * as THREE from 'three';
-import { gridToWorld, PIER_Z, POI } from './config.js';
-import { distance2d } from './rng.js';
-
-// Cast of original characters who give the jobs.
-export const CAST = {
-  salma: 'Salma the Harbor Captain',
-  bimo: 'Bimo the Mechanic',
-  ratu: 'Ratu the Market Trader',
-  dewo: 'Dewo the Courier',
-  lala: 'Lala the Beach Singer',
-  pakTono: 'Pak Tono the Dock Foreman',
-};
-
-// Job definitions. kind drives the objective logic in the JobSystem:
-// deliverCar, pickupDeliver, escape, passenger, chaseTarget, escortCargo.
 export const STORY_JOBS = [
   {
-    id: 'job1',
-    title: 'First Wheels',
-    giver: CAST.bimo,
-    kind: 'deliverCar',
-    dialog: [
-      ['Bimo', 'You walk everywhere in this heat? Take that coupe by my bench.'],
-      ['Bimo', 'Drive it down to the shipyard garage. Gently, she is a classic.'],
-      ['You', 'Consider it delivered, Bimo.'],
+    id: 'crate-run', title: 'Job 1 — The Harbourmaster\u2019s Crate',
+    giver: 'Kapten Rudi Hartono', giverPos: { x: 158, z: 52 },
+    dialogue: [
+      ['Kapten Rudi', 'Kira. One crate, no questions. It fell off a manifest, not a ship.'],
+      ['Kira', 'Everything falls somewhere with you, Kapten. Where to?'],
+      ['Kapten Rudi', 'Bengkel Sari at the market. And Kira — the harbour patrol is bored today. Drive bored too.'],
     ],
-    target: { x: POI.garage.x, z: POI.garage.z, label: 'Shipyard Garage' },
-    cash: 300, respect: 10,
+    objective: 'Deliver the crate to Bengkel Sari in Pasar',
+    target: { x: -44, z: 22 }, pay: 150, respect: 6, heatOnStart: 0,
+    outro: [['Sari', 'Rudi\u2019s crate. Heavier than his promises. Tell him the motor on pier three still rattles.']],
   },
   {
-    id: 'job2',
-    title: 'Market Rush',
-    giver: CAST.ratu,
-    kind: 'pickupDeliver',
-    dialog: [
-      ['Ratu', 'My spice crates sit at the Grand Market, and the pier buyers leave soon!'],
-      ['Ratu', 'Pick up the package at Pasar Raya, then race it to the pier. Quick!'],
-      ['You', 'On it. Nobody outruns the heat.'],
+    id: 'market-debt', title: 'Job 2 — Pasar Ledger',
+    giver: 'Ibu Lastri', giverPos: { x: -66, z: -30 },
+    dialogue: [
+      ['Ibu Lastri', 'The spice syndicate says I owe them. I owe nobody but the rain.'],
+      ['Kira', 'You want me to carry a message, Ibu?'],
+      ['Ibu Lastri', 'Carry this ledger to the old town notary. Paper beats muscle, if it arrives.'],
     ],
-    pickup: { x: gridToWorld(3) + 10, z: gridToWorld(3) - 14, label: 'Spice Package' },
-    target: { x: gridToWorld(3), z: PIER_Z, label: 'The Pier' },
-    timeLimit: 110,
-    cash: 450, respect: 14,
+    objective: 'Take the ledger to the Kota Tua notary',
+    target: { x: 66, z: -66 }, pay: 170, respect: 7, heatOnStart: 0,
+    outro: [['Notary Pello', 'Stamped and witnessed. The syndicate can queue like everyone else.']],
   },
   {
-    id: 'job3',
-    title: 'Cool Down',
-    giver: CAST.dewo,
-    kind: 'escape',
-    dialog: [
-      ['Dewo', 'Bad news: the port police think my van carried more than fish.'],
-      ['Dewo', 'They are watching you now too. Lose the heat, three stars, all of it.'],
-      ['You', 'Stay low, break sight, let it cool. Got it.'],
+    id: 'hill-medicine', title: 'Job 3 — Medicine for Bukit',
+    giver: 'Dokter Amara', giverPos: { x: -110, z: -110 },
+    dialogue: [
+      ['Dokter Amara', 'The clinic fridge died at noon. This cooler is the last cold medicine on the hill.'],
+      ['Kira', 'Then I drive like the ice is melting. Because it is.'],
+      ['Dokter Amara', 'Ninety seconds of grace, Kira. Go.'],
     ],
-    startStars: 3,
-    cash: 500, respect: 18,
+    objective: 'Rush the cooler to the Pantai pharmacy',
+    target: { x: 22, z: 154 }, pay: 210, respect: 9, heatOnStart: 0, timeLimit: 150,
+    outro: [['Pharmacist Bima', 'Still cold. You just saved the hill clinic a very bad week.']],
   },
   {
-    id: 'job4',
-    title: 'Singer to the Shore',
-    giver: CAST.lala,
-    kind: 'passenger',
-    dialog: [
-      ['Lala', 'My show at Kirana Beach starts at sunset and my ride never came!'],
-      ['Lala', 'Take me there in any car with four wheels. I tip in songs and cash.'],
-      ['You', 'Hop in. Front row traffic, coming up.'],
+    id: 'borrowed-sedan', title: 'Job 4 — A Borrowed Sedan',
+    giver: 'Sari the Mechanic', giverPos: { x: -44, z: 22 },
+    dialogue: [
+      ['Sari', 'A customer left a sedan. A different customer wants it gone. You see my problem.'],
+      ['Kira', 'I see a car with no owner and a city full of police.'],
+      ['Sari', 'Then be quick and be boring. Chop yard by the south shore. No scratches I can\u2019t buff out.'],
     ],
-    pickup: { x: gridToWorld(2) - 8, z: gridToWorld(4) + 8, label: 'Lala' },
-    target: { x: gridToWorld(0) + 8, z: gridToWorld(0) + 6, label: 'Kirana Beach Stage' },
-    cash: 380, respect: 12,
+    objective: 'Deliver the borrowed sedan to the Pantai chop yard (enter any car first)',
+    target: { x: -22, z: 176 }, pay: 260, respect: 10, heatOnStart: 12, needsVehicle: true,
+    outro: [['Yard Boss Olin', 'Clean work. Sari always sends the careful ones.']],
   },
   {
-    id: 'job5',
-    title: 'Runaway Truck',
-    giver: CAST.salma,
-    kind: 'chaseTarget',
-    dialog: [
-      ['Salma', 'A dock runner just stole a loaded pickup and fled north!'],
-      ['Salma', 'Chase him down and stop that truck. Ram it until it gives up.'],
-      ['You', 'One stopped truck, coming right up.'],
+    id: 'night-ferry', title: 'Job 5 — The Night Ferry Manifest',
+    giver: 'Kapten Rudi Hartono', giverPos: { x: 158, z: 52 },
+    dialogue: [
+      ['Kapten Rudi', 'The night ferry carries a manifest that must not reach the morning ferry.'],
+      ['Kira', 'You want me to race a boat on land, Kapten.'],
+      ['Kapten Rudi', 'I want the manifest at the lighthouse depot before the patrol shift changes. Same thing.'],
     ],
-    targetHealth: 60,
-    cash: 650, respect: 22,
+    objective: 'Beat the shift change: reach the Bukit depot fast',
+    target: { x: -154, z: -154 }, pay: 320, respect: 12, heatOnStart: 18, timeLimit: 170,
+    outro: [['Depot Keeper Nia', 'Manifest received, questions unasked. Rudi owes you twice now.']],
   },
   {
-    id: 'job6',
-    title: 'Heat Season Finale',
-    giver: CAST.pakTono,
-    kind: 'escortCargo',
-    dialog: [
-      ['Pak Tono', 'One last container, kid. It goes to Palm Heights tonight.'],
-      ['Pak Tono', 'The helicopter will be watching. Drive smart, drive fast.'],
-      ['You', 'Heat season ends with me on top, Pak.'],
+    id: 'syndicate-parley', title: 'Job 6 — Parley at the Pier',
+    giver: 'Ibu Lastri', giverPos: { x: -66, z: -30 },
+    dialogue: [
+      ['Ibu Lastri', 'The syndicate agreed to talk. At pier nine. At dusk. Bring your calm face.'],
+      ['Kira', 'And if the talk goes loud?'],
+      ['Ibu Lastri', 'Then run, courier. Running is also a kind of talking.'],
     ],
-    pickup: { x: gridToWorld(4), z: PIER_Z, label: 'Marked Container Truck' },
-    target: { x: gridToWorld(5) - 10, z: gridToWorld(0) + 10, label: 'Palm Heights Villa' },
-    startStars: 2,
-    cash: 1200, respect: 40,
+    objective: 'Meet the syndicate at pier nine (harbour, east pier)',
+    target: { x: 196, z: 22 }, pay: 300, respect: 12, heatOnStart: 26,
+    outro: [['Syndicate Envoy Voss', 'Lastri\u2019s debt is settled — in writing. You have interesting friends, courier.']],
+  },
+  {
+    id: 'storm-cargo', title: 'Job 7 — Storm Cargo',
+    giver: 'Dokter Amara', giverPos: { x: -110, z: -110 },
+    dialogue: [
+      ['Dokter Amara', 'A storm shipment washed to the wrong warehouse — Kota Tua, by the notary.'],
+      ['Kira', 'Generators? Medicine?'],
+      ['Dokter Amara', 'Both. And every patrol in the city is watching the roads tonight. I\u2019m sorry, Kira.'],
+    ],
+    objective: 'Collect the storm cargo from Kota Tua and bring it back to the Bukit clinic',
+    target: { x: 66, z: -44 }, pay: 380, respect: 14, heatOnStart: 30, returnToGiver: true,
+    outro: [['Dokter Amara', 'The hill will sleep warm tonight. So will I. Thank you.']],
+  },
+  {
+    id: 'heat-season', title: 'Job 8 — Heat Season',
+    giver: 'Kapten Rudi Hartono', giverPos: { x: 158, z: 52 },
+    dialogue: [
+      ['Kapten Rudi', 'Last one, Kira. Your debt paper. It\u2019s in the harbour office safe — tonight it moves to the bank in Kota Tua.'],
+      ['Kira', 'If I reach the bank first, I\u2019m free.'],
+      ['Kapten Rudi', 'If you reach it at all, you\u2019re legend. The whole city will be watching. Go loud, courier.'],
+    ],
+    objective: 'Intercept your debt paper: reach the Kota Tua bank',
+    target: { x: 88, z: -88 }, pay: 600, respect: 25, heatOnStart: 42,
+    outro: [
+      ['Kira', 'Paper in hand. Debt: zero. Teluk Kirana, you beautiful furnace — I\u2019m staying.'],
+      ['Kapten Rudi', 'Heat Season is over, courier. The harbour is yours now.'],
+    ],
   },
 ];
 
-// A glowing vertical beam marking the current objective.
-export function makeObjectiveBeam() {
-  const group = new THREE.Group();
-  const beamMat = new THREE.MeshBasicMaterial({
-    color: 0xffd23c, transparent: true, opacity: 0.4,
-    side: THREE.DoubleSide, depthWrite: false,
-  });
-  const beam = new THREE.Mesh(new THREE.CylinderGeometry(1.6, 1.6, 42, 12, 1, true), beamMat);
-  beam.position.y = 21;
-  group.add(beam);
-  const ringMat = new THREE.MeshBasicMaterial({
-    color: 0xffd23c, transparent: true, opacity: 0.75, side: THREE.DoubleSide, depthWrite: false,
-  });
-  const ring = new THREE.Mesh(new THREE.RingGeometry(2.2, 3.1, 24), ringMat);
-  ring.rotation.x = -Math.PI / 2;
-  ring.position.y = 0.15;
-  group.add(ring);
-  group.visible = false;
-  group.userData = { beam, ring };
-  return group;
-}
+export const SIDE_ACTIVITIES = {
+  taxi: {
+    title: 'Taxi Fare',
+    blurb: 'Pick up the marked passenger, drop them at the glowing drop-off.',
+  },
+  race: {
+    title: 'Street Race — Harbour Loop',
+    blurb: 'Three checkpoints around the harbour and old town. Beat the clock.',
+    checkpoints: [
+      { x: 154, z: -66 }, { x: 66, z: -110 }, { x: 110, z: 22 },
+    ],
+    parTime: 95,
+  },
+};
 
-export class JobSystem {
-  constructor(scene, state, police) {
-    this.scene = scene;
-    this.state = state;      // shared game state (cash, respect, jobsDone)
-    this.police = police;
-    this.beam = makeObjectiveBeam();
-    scene.add(this.beam);
-    this.active = null;      // current job runtime object
-    this.dialogQueue = [];
-    this.onDialog = null;    // callback(lines, done)
-    this.onBanner = null;    // callback(text, sub)
-    this.onRadio = null;     // callback(text)
-    this.targetCar = null;   // for chaseTarget jobs
-    this.time = 0;
+// The job manager: a small state machine the orchestrator ticks each frame.
+export class JobManager {
+  constructor(hooks) {
+    this.hooks = hooks; // { notify, startDialogue(lines, done), addCash, addRespect, addHeat, save }
+    this.storyIndex = 0;         // next story job to offer
+    this.active = null;          // { job, stage: 'go'|'return', deadline|null }
+    this.sideActive = null;      // taxi / race runtime state
+    this.completedStory = [];
   }
 
-  nextJobIndex() {
-    return this.state.jobsDone.length;
+  get nextGiver() {
+    const job = STORY_JOBS[this.storyIndex];
+    return job ? { job, pos: job.giverPos, name: job.giver } : null;
   }
 
-  allDone() {
-    return this.nextJobIndex() >= STORY_JOBS.length;
+  get finished() { return this.storyIndex >= STORY_JOBS.length; }
+
+  startStoryJob() {
+    const job = STORY_JOBS[this.storyIndex];
+    if (!job || this.active) return;
+    this.hooks.startDialogue(job.dialogue, () => {
+      this.active = { job, stage: 'go', deadline: job.timeLimit ? this.hooks.now() + job.timeLimit : null };
+      if (job.heatOnStart) this.hooks.addHeat(job.heatOnStart);
+      this.hooks.notify(`${job.title}: ${job.objective}`);
+      this.hooks.save();
+    });
   }
 
-  // Start the next story job if none is active.
-  startNext() {
-    if (this.active || this.allDone()) return false;
-    const def = STORY_JOBS[this.nextJobIndex()];
-    this.active = {
-      def,
-      stage: def.kind === 'pickupDeliver' || def.kind === 'passenger' || def.kind === 'escortCargo'
-        ? 'pickup' : 'main',
-      timeLeft: def.timeLimit || 0,
-      startedAt: this.time,
-      targetCarHealth: def.targetHealth || 0,
-    };
-    if (def.startStars) this.police.setStars(Math.max(this.police.stars, def.startStars));
-    if (this.onDialog) this.onDialog(def.dialog, def.giver);
-    if (this.onRadio) this.onRadio('New job: ' + def.title + ' - ' + def.giver);
+  // Returns the current world-space objective marker, if any.
+  currentObjective() {
+    if (this.active) {
+      const { job, stage } = this.active;
+      if (stage === 'return') return { x: job.giverPos.x, z: job.giverPos.z, label: `Return to ${job.giver}` };
+      return { x: job.target.x, z: job.target.z, label: job.objective };
+    }
+    if (this.sideActive?.kind === 'taxi') {
+      const s = this.sideActive;
+      return s.pickedUp
+        ? { x: s.drop.x, z: s.drop.z, label: 'Drop off your passenger' }
+        : { x: s.pick.x, z: s.pick.z, label: 'Pick up the passenger' };
+    }
+    if (this.sideActive?.kind === 'race') {
+      const cp = SIDE_ACTIVITIES.race.checkpoints[this.sideActive.next];
+      if (cp) return { x: cp.x, z: cp.z, label: `Checkpoint ${this.sideActive.next + 1} of ${SIDE_ACTIVITIES.race.checkpoints.length}` };
+    }
+    return null;
+  }
+
+  // Called when the player steps into the objective marker.
+  reachObjective(playerInVehicle) {
+    if (this.active) {
+      const { job } = this.active;
+      if (job.needsVehicle && !playerInVehicle) {
+        this.hooks.notify('You need to arrive in a vehicle for this job.');
+        return;
+      }
+      if (this.active.stage === 'go' && job.returnToGiver) {
+        this.active.stage = 'return';
+        this.active.deadline = null;
+        this.hooks.notify('Cargo collected. Take it back to the giver.');
+        return;
+      }
+      this.completeStoryJob();
+      return;
+    }
+    if (this.sideActive?.kind === 'taxi') {
+      const s = this.sideActive;
+      if (!s.pickedUp) {
+        s.pickedUp = true;
+        this.hooks.notify('Passenger aboard. Mind the corners.');
+      } else {
+        const fare = Math.round(s.fare);
+        this.hooks.addCash(fare);
+        this.hooks.addRespect(2);
+        this.hooks.notify(`Fare paid: $${fare}.`);
+        this.sideActive = null;
+        this.hooks.save();
+      }
+      return;
+    }
+    if (this.sideActive?.kind === 'race') {
+      const s = this.sideActive;
+      s.next += 1;
+      if (s.next >= SIDE_ACTIVITIES.race.checkpoints.length) {
+        const elapsed = this.hooks.now() - s.startedAt;
+        if (elapsed <= SIDE_ACTIVITIES.race.parTime) {
+          this.hooks.addCash(220);
+          this.hooks.addRespect(8);
+          this.hooks.notify(`Race won in ${Math.round(elapsed)}s! Prize $220.`);
+        } else {
+          this.hooks.notify(`Race finished in ${Math.round(elapsed)}s — over par. No prize.`);
+        }
+        this.sideActive = null;
+        this.hooks.save();
+      } else {
+        this.hooks.notify(`Checkpoint ${s.next} cleared.`);
+      }
+    }
+  }
+
+  completeStoryJob() {
+    const { job } = this.active;
+    this.active = null;
+    this.storyIndex += 1;
+    this.completedStory.push(job.id);
+    this.hooks.startDialogue(job.outro, () => {});
+    this.hooks.addCash(job.pay);
+    this.hooks.addRespect(job.respect);
+    this.hooks.notify(`${job.title} complete: +$${job.pay}, +${job.respect} respect.`);
+    if (this.finished) this.hooks.notify('STORY COMPLETE — Heat Season survived. Free roam is yours.');
+    this.hooks.save();
+  }
+
+  // Timers: fail a timed job whose clock ran out (it can be retaken).
+  update() {
+    if (this.active?.deadline && this.hooks.now() > this.active.deadline) {
+      const title = this.active.job.title;
+      this.active = null;
+      this.hooks.notify(`${title} failed — too slow. Talk to the giver to retry.`);
+    }
+  }
+
+  startTaxi(rng, playerPos) {
+    if (this.sideActive || this.active) return false;
+    const pick = { x: Math.round(playerPos.x + rng.range(-70, 70)), z: Math.round(playerPos.z + rng.range(-70, 70)) };
+    const drop = { x: Math.round(pick.x + rng.range(-120, 120)), z: Math.round(pick.z + rng.range(-120, 120)) };
+    const dist = Math.hypot(drop.x - pick.x, drop.z - pick.z);
+    this.sideActive = { kind: 'taxi', pick, drop, pickedUp: false, fare: 18 + dist * 0.09 };
+    this.hooks.notify('Taxi fare: pick up the passenger at the gold marker.');
     return true;
   }
 
-  currentTarget() {
-    if (!this.active) return null;
-    const a = this.active;
-    if (a.stage === 'pickup') return a.def.pickup;
-    if (a.def.kind === 'chaseTarget' && this.targetCar) {
-      return { x: this.targetCar.x, z: this.targetCar.z, label: 'Target Truck' };
-    }
-    if (a.def.kind === 'escape') return null;
-    return a.def.target;
+  startRace() {
+    if (this.sideActive || this.active) return false;
+    this.sideActive = { kind: 'race', next: 0, startedAt: this.hooks.now() };
+    this.hooks.notify('Street race started — hit every checkpoint before par time!');
+    this.hooks.addHeat(8);
+    return true;
   }
 
-  objectiveText() {
-    if (!this.active) {
-      if (this.allDone()) return 'All story jobs done. Free roam the bay!';
-      const def = STORY_JOBS[this.nextJobIndex()];
-      return 'Next job: ' + def.title + ' (press J)';
-    }
-    const a = this.active;
-    const d = a.def;
-    switch (d.kind) {
-      case 'deliverCar':
-        return 'Deliver the car to the Shipyard Garage';
-      case 'pickupDeliver':
-        return a.stage === 'pickup' ? 'Pick up the spice package at Pasar Raya' : 'Deliver the package to the pier!';
-      case 'escape':
-        return 'Lose the police: break sight until the stars are gone';
-      case 'passenger':
-        return a.stage === 'pickup' ? 'Pick up Lala (in a car)' : 'Drive Lala to Kirana Beach';
-      case 'chaseTarget':
-        return 'Stop the runaway truck: ram it!';
-      case 'escortCargo':
-        return a.stage === 'pickup' ? 'Collect the container truck at the pier' : 'Deliver the cargo to Palm Heights';
-      default:
-        return d.title;
-    }
+  restore(saved) {
+    if (!saved) return;
+    this.storyIndex = Math.min(saved.storyIndex || 0, STORY_JOBS.length);
+    this.completedStory = saved.completedStory || [];
   }
 
-  complete() {
-    const a = this.active;
-    if (!a) return;
-    this.state.cash += a.def.cash;
-    this.state.respect += a.def.respect;
-    this.state.jobsDone.push(a.def.id);
-    if (this.onBanner) {
-      this.onBanner('JOB COMPLETE', a.def.title + '  +$' + a.def.cash + '  +' + a.def.respect + ' respect');
-    }
-    this.active = null;
-    this.targetCar = null;
-    this.beam.visible = false;
-  }
-
-  fail(reason) {
-    if (!this.active) return;
-    if (this.onBanner) this.onBanner('JOB FAILED', reason + ' - press J to retry');
-    if (this.active.def.startStars && this.active.def.kind !== 'escape') {
-      // Leave the heat as it is; the player must cool down naturally.
-    }
-    this.active = null;
-    this.targetCar = null;
-    this.beam.visible = false;
-  }
-
-  // Per-frame update. ctx carries player, cars and callbacks.
-  update(dt, ctx) {
-    this.time += dt;
-    const a = this.active;
-    // Animate the beam even with no job (hidden anyway).
-    if (this.beam.visible) {
-      this.beam.userData.ring.rotation.z += dt * 1.5;
-      this.beam.userData.beam.material.opacity = 0.32 + Math.sin(this.time * 3) * 0.1;
-    }
-    if (!a) return;
-    const player = ctx.player;
-    const p = player.pos;
-
-    // Timer jobs.
-    if (a.def.timeLimit && a.stage !== 'pickup') {
-      a.timeLeft -= dt;
-      if (a.timeLeft <= 0) {
-        this.fail('Out of time');
-        if (ctx.onFailSound) ctx.onFailSound();
-        return;
-      }
-    } else if (a.def.timeLimit && a.stage === 'pickup') {
-      a.timeLeft = a.def.timeLimit;
-    }
-
-    // Position the beam on the current target.
-    const target = this.currentTarget();
-    if (target) {
-      this.beam.visible = true;
-      this.beam.position.set(target.x, 0, target.z);
-    } else {
-      this.beam.visible = false;
-    }
-
-    const d = a.def;
-    const near = target ? distance2d(p.x, p.z, target.x, target.z) : Infinity;
-
-    switch (d.kind) {
-      case 'deliverCar': {
-        if (player.car && near < 7) this.complete();
-        break;
-      }
-      case 'pickupDeliver': {
-        if (a.stage === 'pickup' && near < 5) {
-          a.stage = 'main';
-          if (this.onRadio) this.onRadio('Package collected. The clock is running!');
-        } else if (a.stage === 'main' && near < 7) {
-          this.complete();
-        }
-        break;
-      }
-      case 'escape': {
-        if (this.police.stars === 0) this.complete();
-        break;
-      }
-      case 'passenger': {
-        if (a.stage === 'pickup') {
-          if (player.car && near < 6) {
-            a.stage = 'main';
-            if (this.onDialog) {
-              this.onDialog([['Lala', 'Nice wheels! Beach, please, and do not spare the palms.']], 'Lala');
-            }
-          }
-        } else if (player.car && near < 7) {
-          this.complete();
-        }
-        break;
-      }
-      case 'chaseTarget': {
-        if (this.targetCar) {
-          if (this.targetCar.health <= 100 - a.targetCarHealth || this.targetCar.stopped) {
-            this.complete();
-          }
-        }
-        break;
-      }
-      case 'escortCargo': {
-        if (a.stage === 'pickup' && near < 6) {
-          a.stage = 'main';
-          this.police.setStars(Math.max(this.police.stars, 2));
-          if (this.onRadio) this.onRadio('Cargo rolling. Expect company from the sky.');
-        } else if (a.stage === 'main' && near < 8) {
-          this.complete();
-        }
-        break;
-      }
-      default:
-        break;
-    }
-  }
-}
-
-// Side activity: taxi fares. Pick a passenger point, then a drop point.
-export class TaxiActivity {
-  constructor(state) {
-    this.state = state;
-    this.active = false;
-    this.stage = 'pickup';
-    this.pickup = null;
-    this.drop = null;
-    this.fare = 0;
-  }
-
-  start(rng) {
-    const spots = [
-      { x: gridToWorld(1) + 6, z: gridToWorld(5) - 6 },
-      { x: gridToWorld(4) - 6, z: gridToWorld(1) + 6 },
-      { x: gridToWorld(2) + 6, z: gridToWorld(2) - 6 },
-      { x: gridToWorld(5) - 6, z: gridToWorld(3) + 6 },
-      { x: gridToWorld(0) + 6, z: gridToWorld(4) - 6 },
-    ];
-    this.pickup = spots[rng.int(0, spots.length - 1)];
-    let drop = spots[rng.int(0, spots.length - 1)];
-    if (drop === this.pickup) drop = spots[(spots.indexOf(this.pickup) + 2) % spots.length];
-    this.drop = drop;
-    this.fare = 90 + rng.int(0, 12) * 15;
-    this.stage = 'pickup';
-    this.active = true;
-    return this.pickup;
-  }
-
-  target() {
-    if (!this.active) return null;
-    return this.stage === 'pickup'
-      ? { ...this.pickup, label: 'Taxi Passenger' }
-      : { ...this.drop, label: 'Taxi Drop-off' };
-  }
-
-  update(player) {
-    if (!this.active) return null;
-    const p = player.pos;
-    const t = this.target();
-    if (!player.car) return null;
-    if (distance2d(p.x, p.z, t.x, t.z) < 6.5) {
-      if (this.stage === 'pickup') {
-        this.stage = 'drop';
-        return 'picked';
-      }
-      this.active = false;
-      this.state.cash += this.fare;
-      this.state.respect += 2;
-      this.state.sideDone = (this.state.sideDone || 0) + 1;
-      return 'done';
-    }
-    return null;
-  }
-}
-
-// Side activity: a short checkpoint street race against the clock.
-export class RaceActivity {
-  constructor(state) {
-    this.state = state;
-    this.active = false;
-    this.points = [];
-    this.idx = 0;
-    this.timeLeft = 0;
-    this.prize = 400;
-  }
-
-  start() {
-    this.points = [
-      { x: gridToWorld(0), z: gridToWorld(6), label: 'Checkpoint 1' },
-      { x: gridToWorld(3), z: gridToWorld(6), label: 'Checkpoint 2' },
-      { x: gridToWorld(6), z: gridToWorld(6), label: 'Checkpoint 3' },
-      { x: gridToWorld(6), z: gridToWorld(3), label: 'Checkpoint 4' },
-      { x: gridToWorld(6), z: gridToWorld(0), label: 'Finish' },
-    ];
-    this.idx = 0;
-    this.timeLeft = 75;
-    this.active = true;
-  }
-
-  target() {
-    if (!this.active) return null;
-    return this.points[this.idx];
-  }
-
-  update(dt, player) {
-    if (!this.active) return null;
-    this.timeLeft -= dt;
-    if (this.timeLeft <= 0) {
-      this.active = false;
-      return 'failed';
-    }
-    const p = player.pos;
-    const t = this.points[this.idx];
-    if (player.car && distance2d(p.x, p.z, t.x, t.z) < 9) {
-      this.idx++;
-      this.timeLeft += 14;
-      if (this.idx >= this.points.length) {
-        this.active = false;
-        this.state.cash += this.prize;
-        this.state.respect += 6;
-        this.state.sideDone = (this.state.sideDone || 0) + 1;
-        return 'done';
-      }
-      return 'checkpoint';
-    }
-    return null;
+  snapshot() {
+    return { storyIndex: this.storyIndex, completedStory: this.completedStory };
   }
 }

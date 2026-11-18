@@ -4,85 +4,53 @@
 ![Rank](https://make.fun/badge/gta6-01/lucky-wren-78/teluk-kirana/rank.svg)
 ![Reward](https://make.fun/badge/gta6-01/lucky-wren-78/teluk-kirana/reward.svg)
 
-An original 3D open-world crime game set in a tropical Indonesian port city at
-golden-hour dusk, built with three.js and plain static files — no build step,
-no network requests. Play it by serving `game/` with any static server
-(`node serve.ts`, then open http://localhost:8080).
+An offline, open-world 3D crime game set in Teluk Kirana, a fictional tropical
+port city, built with three.js and plain ES modules — no build step, no network
+requests, everything vendored under `game/`. Entry for the make.fun bounty
+[gta6-01](https://make.fun/bounty/gta6-01).
 
-Bounty: https://make.fun/bounty/gta6-01
+You are Kirana "Kira" Larasati, a harbour courier who owes money to the wrong
+people. Work eight story jobs across five districts, run taxi fares and street
+races on the side, and try to keep the Teluk Kirana police — patrol cars, a
+spotlight helicopter, and roadblocks — off your tail.
 
 ## The city
 
-Teluk Kirana is a procedurally built port city of five districts, each with its
-own palette and building heights:
+- **5 districts** on a procedural road grid: Pelabuhan (harbour, pier and moored
+  boats), Pasar (market), Bukit (hill residences), Pantai (beachfront), Kota Tua
+  (old town) — canvas-generated building facades, palm trees, street lamps.
+- **Dynamic day–night cycle**: the sun arcs across the sky, dusk turns the sky
+  burnt orange, and street lamps plus vehicle headlights switch on after dark.
+- **Passing rain showers**: rain particles, darker wet roads, and a moodier sky
+  roll in and out on their own schedule.
 
-- **Pelabuhan Lama / Old Harbor** — pier, cranes, container stacks, boats
-- **Pasar Raya / Grand Market** — dense mid-rise market blocks
-- **Bukit Palma / Palm Heights** — tall pale towers
-- **Pantai Kirana / Kirana Beach** — low golden beachfront blocks
-- **Kawasan Galangan / Shipyard Flats** — industrial yards and warehouses
+## What you can do
 
-A 7×7 road grid with painted markings, sidewalks, palm-lined avenues, street
-lamps, glowing windows, drifting clouds, warm fog and a low sun over the water.
-
-## Features
-
-- **6 story jobs** in sequence, each with opening dialogue and a distinct
-  objective: deliver a car, a timed spice-package run, escaping a 3-star
-  manhunt, a passenger ride to the beach, chasing down a runaway truck, and a
-  finale cargo run under the police helicopter. Rewards pay cash and respect.
-- **5-star wanted system**: police cars chase and ram with flashing light
-  bars; at 3 stars a helicopter joins with a tracking spotlight. Heat cools
-  when you break line of sight; get surrounded on foot and you are busted.
-- **Traffic and pedestrians**: cars loop the grid and brake for each other,
-  pedestrians stroll the sidewalks and flee from gunfire and fast cars.
-- **Carjacking**: any car can be taken with E — parked or with its driver
-  inside, who bails out and runs.
-- **Combat**: a hitscan pistol with muzzle flash and tracers; police return
-  fire at high wanted levels; death or arrest means hospital fines.
-- **3 radio stations** synthesized live with WebAudio (tropical chill,
-  synthwave, dangdut-style percussion) plus engine, horn, siren, crash,
-  gunshot and helicopter sound effects. Press R while driving to switch.
-- **Side activities**: repeatable taxi fares (T) and a checkpoint street
-  race (G).
-- **Saves**: cash, respect, finished jobs and position persist in
-  localStorage, with autosave and a reset option on the start screen.
-- **HUD**: health and arrest bars, wanted stars, cash/respect, speedometer,
-  radio readout, objective banner, dialog box and a live 2D minimap showing
-  roads, traffic, police, the player and the objective marker.
+- Walk, drive **cars and motorbikes** (bikes lean into corners and thread
+  traffic), and **carjack** any vehicle you can reach.
+- **AI traffic** loops the blocks; **pedestrians** stroll the sidewalks and
+  scatter when trouble starts near them.
+- **Wanted system, 1–5 stars**: patrol cars pursue, a **helicopter with a
+  searchlight** joins at 3 stars, and **roadblocks with spike strips** appear
+  at 4–5 stars. Pistol combat with health, cash and respect economy.
+- **8 story jobs** with dialogue (a harbourmaster, a market trader, a mechanic,
+  and more), plus repeatable **taxi** fares and **street races**.
+- **HUD** with a real-time canvas **minimap**, wanted stars, dialogue box and
+  notifications; **3 synth radio stations** plus sound effects (WebAudio, no
+  audio files); progress **saved to localStorage**.
 
 ## Controls
 
-| Key | Action |
-| --- | --- |
-| WASD / arrows | Move / drive |
-| Mouse (click to lock) | Camera |
-| Shift | Sprint |
-| E | Enter / exit car, advance dialog |
-| F or click | Fire pistol |
-| R | Change radio station (in car) |
-| H | Horn |
-| J | Start next story job |
-| T | Taxi fare |
-| G | Street race |
-| P | Pause |
+WASD / arrows to move or drive · Shift to sprint · E to enter/exit or jack a
+vehicle · F or click to shoot · Space to brake · 1/2/3 for radio stations ·
+Enter to advance dialogue · M for the minimap legend.
 
-## Screenshots
+## Run it
 
-The four screenshots in `screenshots/` are real renders of the game taken by
-`shoot.mjs`, which drives the game's deterministic `?shot=` scenes
-(cover chase, city overview, on-foot dialog, harbor at dusk) in headless
-Chromium at 1280×720.
+```sh
+node serve.ts          # then open the printed local address
+node main.ts           # grader entry: copies game/ + screenshots/ to /output and writes dossier.json
+node shoot.mjs         # regenerate the four screenshots from shots.json
+```
 
-## Layout
-
-- `game/` — the playable static game (`index.html`, `style.css`, `src/*.js`
-  modules, vendored three.js under `game/vendor/`)
-- `main.ts` — packages `game/` + `screenshots/` into the output dossier
-- `serve.ts` — local static server for playing
-- `shoot.mjs` — screenshot script
-- `shots.json` — the screenshot scene list
-
-## License
-
-MIT — see `LICENSE`.
+Deterministic screenshot scenes are staged with `?shot=cover|city|foot|harbor&seed=<n>`.

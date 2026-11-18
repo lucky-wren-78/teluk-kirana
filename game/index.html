@@ -10,78 +10,52 @@
 </script>
 </head>
 <body>
-<div id="game"></div>
+<canvas id="scene"></canvas>
 
-<!-- Heads-up display -->
-<div id="hud">
-  <div id="topLeft">
-    <div id="healthWrap"><div id="healthFill"></div></div>
-    <div id="arrestWrap"><div id="arrestFill"></div></div>
-    <div id="districtLabel">Pelabuhan Lama</div>
+<div id="hud" class="hidden">
+  <div id="topbar">
+    <div id="wanted" aria-label="wanted level"></div>
+    <div id="clockbox"><span id="clock">06:00</span><span id="weather"></span></div>
   </div>
-  <div id="topRight">
-    <div id="wantedStars">☆☆☆☆☆</div>
-    <div id="cashLabel">$0</div>
-    <div id="respectLabel">Respect 0</div>
-    <div id="timerLabel"></div>
+  <div id="stats">
+    <div id="cash">$0</div>
+    <div id="respect">RESPECT 0</div>
+    <div id="healthbar"><div id="healthfill"></div></div>
+    <div id="joblabel"></div>
   </div>
-  <div id="objectiveBar"><span id="objectiveLabel"></span></div>
-  <div id="jobBanner"><div id="bannerTitle"></div><div id="bannerSub"></div></div>
-  <div id="bottomRight">
-    <canvas id="minimap" width="168" height="168"></canvas>
-    <div id="speedLabel"></div>
-    <div id="radioLabel"></div>
+  <canvas id="minimap" width="180" height="180"></canvas>
+  <div id="speedo" class="hidden">0 km/h</div>
+  <div id="radio" class="hidden"></div>
+  <div id="notify"></div>
+  <div id="dialogue" class="hidden">
+    <div id="dlg-name"></div>
+    <div id="dlg-text"></div>
+    <div id="dlg-hint">ENTER ▸</div>
   </div>
-  <div id="promptLabel"></div>
-  <div id="toast"></div>
-  <div id="dialogBox">
-    <div id="dialogName"></div>
-    <div id="dialogText"></div>
-    <div id="dialogHint">E / click - next</div>
-  </div>
+  <div id="prompt" class="hidden"></div>
+  <div id="crosshair" class="hidden">+</div>
+  <div id="damageflash"></div>
 </div>
 
-<!-- Start screen -->
-<div id="startScreen">
-  <div class="panel">
-    <div class="kicker">A tropical port city open world</div>
+<div id="startscreen">
+  <div class="start-inner">
     <h1>TELUK KIRANA</h1>
-    <div class="subtitle">HEAT SEASON</div>
-    <p class="blurb">Six story jobs across five districts. Steal cars, run fares,
-      dodge a five-star police force with a helicopter, and own the bay by sunset.</p>
-    <button id="startBtn">START ENGINE</button>
-    <button id="resetBtn" class="ghost">Reset save</button>
-    <div class="controls">
-      <div><b>WASD</b> move / drive</div>
-      <div><b>Mouse</b> camera (click to lock)</div>
-      <div><b>Shift</b> sprint</div>
-      <div><b>E</b> enter / exit car, talk</div>
-      <div><b>F / click</b> pistol</div>
-      <div><b>R</b> radio station</div>
-      <div><b>H</b> horn</div>
-      <div><b>J</b> next story job</div>
-      <div><b>T</b> taxi fare</div>
-      <div><b>G</b> street race</div>
-      <div><b>P</b> pause</div>
-    </div>
+    <h2>HEAT SEASON</h2>
+    <p class="tagline">A tropical port city. Eight jobs. Five stars of trouble.</p>
+    <p class="story">You are Kira Larasati, a harbour courier deep in debt.
+    Work the docks, the market and the hill roads — and outrun the heat.</p>
+    <button id="startbtn" type="button">START ENGINE</button>
+    <p class="controls">WASD move / drive · SHIFT sprint · E enter or jack vehicle ·
+    F shoot · SPACE brake · 1·2·3 radio · ENTER talk</p>
+    <p id="continue-note" class="hidden">Saved game found — starting continues your story.</p>
   </div>
 </div>
 
-<!-- Pause screen -->
-<div id="pauseScreen">
-  <div class="panel small">
-    <h2>PAUSED</h2>
-    <p>The heat waits for no one. Well, just this once.</p>
-    <button id="resumeBtn">RESUME</button>
-  </div>
-</div>
-
-<!-- Game over screen -->
-<div id="overScreen">
-  <div class="panel small">
-    <h2 id="overTitle">WASTED</h2>
-    <p>You wake up at Kirana General. The city keeps your money's worth in fines.</p>
-    <button id="respawnBtn">LEAVE HOSPITAL</button>
+<div id="gameover" class="hidden">
+  <div class="start-inner">
+    <h1 id="gameover-title">BUSTED</h1>
+    <p id="gameover-text"></p>
+    <button id="respawnbtn" type="button">BACK TO THE DOCKS</button>
   </div>
 </div>
 

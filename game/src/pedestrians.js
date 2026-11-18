@@ -1,150 +1,146 @@
-// pedestrians.js - citizens of Teluk Kirana walking the sidewalks.
-// Each pedestrian walks between waypoints along the block edges,
-// wears a random bright shirt, and runs away when danger is near:
-// a gunshot, a fast car, or a crash.
+// pedestrians.js — the walking population of Teluk Kirana.
+// Each pedestrian strolls a sidewalk loop around a city block. When a gunshot,
+// a crash or a speeding car erupts nearby they panic: arms up, sprint away
+// from the trouble, then calm down and resume their stroll.
 
 import * as THREE from 'three';
-import { GRID, PITCH, CITY_HALF, gridToWorld, SHIRT_COLORS, WORLD_EDGE } from './config.js';
-import { clamp, turnToward, distance2d } from './rng.js';
-import { pointBlocked } from './city.js';
+import { ROAD_LINES, CITY } from './config.js';
+import { clamp, distance2d } from './rng.js';
 
-const skinTones = [0xe8b88a, 0xc98a5e, 0x9a6544, 0x7a4a2e, 0xf2c9a0];
+const SHIRT_COLOURS = [0xe8e3d8, 0x38b8a8, 0xd94f6a, 0x4a7dd9, 0xe0c33a, 0x7dd94a, 0xd97a2e, 0x9e6ad9];
+const SKIN_TONES = [0x8a5a3b, 0xb97a56, 0x6e4526, 0xd9a878];
 
-// Build one simple pedestrian figure.
-export function buildPedMesh(rng) {
+function buildPedestrianMesh(rng) {
   const group = new THREE.Group();
-  const shirt = new THREE.MeshLambertMaterial({ color: rng.pick(SHIRT_COLORS) });
-  const skin = new THREE.MeshLambertMaterial({ color: rng.pick(skinTones) });
-  const pants = new THREE.MeshLambertMaterial({ color: rng.pick([0x2c3e50, 0x5a4632, 0x37474f, 0x6d4c41]) });
-  const torso = new THREE.Mesh(new THREE.BoxGeometry(0.56, 0.66, 0.3), shirt);
-  torso.position.y = 1.06;
-  torso.castShadow = true;
+  const skin = new THREE.MeshLambertMaterial({ color: rng.pick(SKIN_TONES) });
+  const shirt = new THREE.MeshLambertMaterial({ color: rng.pick(SHIRT_COLOURS) });
+  const torso = new THREE.Mesh(new THREE.BoxGeometry(0.46, 0.66, 0.26), shirt);
+  torso.position.y = 1.02;
   group.add(torso);
   const head = new THREE.Mesh(new THREE.SphereGeometry(0.19, 8, 7), skin);
-  head.position.y = 1.6;
+  head.position.y = 1.56;
   group.add(head);
-  const limbs = [];
-  for (const sx of [-0.14, 0.14]) {
-    const leg = new THREE.Mesh(new THREE.BoxGeometry(0.17, 0.68, 0.2), pants);
-    leg.position.set(sx, 0.36, 0);
+  const legs = [];
+  for (const side of [-1, 1]) {
+    const leg = new THREE.Mesh(new THREE.BoxGeometry(0.15, 0.68, 0.16), new THREE.MeshLambertMaterial({ color: 0x333a44 }));
+    leg.geometry.translate(0, -0.34, 0);
+    leg.position.set(0, 0.68, side * 0.11);
     group.add(leg);
-    limbs.push(leg);
+    legs.push(leg);
   }
-  for (const sx of [-0.36, 0.36]) {
-    const arm = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.56, 0.15), shirt);
-    arm.position.set(sx, 1.06, 0);
+  const arms = [];
+  for (const side of [-1, 1]) {
+    const arm = new THREE.Mesh(new THREE.BoxGeometry(0.11, 0.56, 0.11), shirt);
+    arm.geometry.translate(0, -0.28, 0);
+    arm.position.set(0, 1.3, side * 0.3);
     group.add(arm);
-    limbs.push(arm);
+    arms.push(arm);
   }
-  group.userData.limbs = limbs;
+  group.userData.legs = legs;
+  group.userData.arms = arms;
   return group;
 }
 
-// A sidewalk waypoint: a corner of a block, offset onto the pavement.
-function randomWaypoint(rng) {
-  const gx = rng.int(0, GRID - 2);
-  const gz = rng.int(0, GRID - 2);
-  const cx = gridToWorld(gx) + PITCH / 2;
-  const cz = gridToWorld(gz) + PITCH / 2;
-  const half = PITCH / 2 - 4.4;
-  const side = rng.int(0, 3);
-  if (side === 0) return { x: cx + rng.range(-half, half), z: cz - half };
-  if (side === 1) return { x: cx + rng.range(-half, half), z: cz + half };
-  if (side === 2) return { x: cx - half, z: cz + rng.range(-half, half) };
-  return { x: cx + half, z: cz + rng.range(-half, half) };
-}
-
-export class Pedestrian {
-  constructor(scene, rng, colliders) {
-    this.mesh = buildPedMesh(rng);
-    scene.add(this.mesh);
-    const start = randomWaypoint(rng);
-    this.x = start.x;
-    this.z = start.z;
-    this.target = randomWaypoint(rng);
-    this.heading = rng.range(0, Math.PI * 2);
-    this.speed = rng.range(1.1, 1.9);
-    this.phase = rng.range(0, Math.PI * 2);
-    this.flee = 0;         // seconds of panic left
-    this.fleeFrom = null;  // point to run away from
-    this.dead = false;
-    this.deadTime = 0;
+export class PedestrianCrowd {
+  constructor(scene, rng, count) {
+    this.members = [];
     this.rng = rng;
-    this.colliders = colliders;
+    for (let i = 0; i < count; i++) {
+      const mesh = buildPedestrianMesh(rng);
+      // A sidewalk loop: pick a block, walk its perimeter.
+      const bi = rng.int(0, ROAD_LINES.length - 2);
+      const bj = rng.int(0, ROAD_LINES.length - 2);
+      const cx = (ROAD_LINES[bi] + ROAD_LINES[bi + 1]) / 2;
+      const cz = (ROAD_LINES[bj] + ROAD_LINES[bj + 1]) / 2;
+      const half = (CITY.blockSize - CITY.roadWidth) / 2 - 0.6;
+      const member = {
+        mesh,
+        cx, cz, half,
+        edge: rng.int(0, 3),
+        t: rng.float(),
+        speed: rng.range(1.1, 1.9),
+        panic: 0,
+        fleeX: 0, fleeZ: 0,
+        phase: rng.range(0, 9),
+        down: false,
+      };
+      this.placeOnLoop(member);
+      scene.add(mesh);
+      this.members.push(member);
+    }
   }
 
-  scare(fromX, fromZ, seconds = 4) {
-    if (this.dead) return;
-    this.flee = Math.max(this.flee, seconds);
-    this.fleeFrom = { x: fromX, z: fromZ };
+  placeOnLoop(m) {
+    const h = m.half;
+    const perimeter = [
+      { x: m.cx - h + m.t * 2 * h, z: m.cz - h },
+      { x: m.cx + h, z: m.cz - h + m.t * 2 * h },
+      { x: m.cx + h - m.t * 2 * h, z: m.cz + h },
+      { x: m.cx - h, z: m.cz + h - m.t * 2 * h },
+    ];
+    const p = perimeter[m.edge];
+    m.mesh.position.set(p.x, 0, p.z);
   }
 
-  kill() {
-    this.dead = true;
-    this.deadTime = 0;
-    this.mesh.rotation.x = -Math.PI / 2;
-    this.mesh.position.y = 0.25;
+  // Something loud happened at (x, z): nearby pedestrians panic and flee.
+  scareAt(x, z, radius) {
+    for (const m of this.members) {
+      const d = distance2d(m.mesh.position.x, m.mesh.position.z, x, z);
+      if (d < radius && !m.down) {
+        m.panic = this.rng.range(1.6, 3.2);
+        const dx = m.mesh.position.x - x;
+        const dz = m.mesh.position.z - z;
+        const len = Math.hypot(dx, dz) || 1;
+        m.fleeX = dx / len;
+        m.fleeZ = dz / len;
+      }
+    }
+  }
+
+  knockDown(x, z, radius) {
+    for (const m of this.members) {
+      const d = distance2d(m.mesh.position.x, m.mesh.position.z, x, z);
+      if (d < radius && !m.down) {
+        m.down = true;
+        m.mesh.rotation.x = Math.PI / 2;
+        m.mesh.position.y = 0.25;
+        return m;
+      }
+    }
+    return null;
   }
 
   update(dt) {
-    if (this.dead) {
-      this.deadTime += dt;
-      return;
-    }
-    let tx;
-    let tz;
-    let speed = this.speed;
-    if (this.flee > 0 && this.fleeFrom) {
-      this.flee -= dt;
-      // Run directly away from the danger point.
-      const dx = this.x - this.fleeFrom.x;
-      const dz = this.z - this.fleeFrom.z;
-      const len = Math.sqrt(dx * dx + dz * dz) || 1;
-      tx = this.x + (dx / len) * 10;
-      tz = this.z + (dz / len) * 10;
-      speed = 4.6;
-    } else {
-      tx = this.target.x;
-      tz = this.target.z;
-      if (distance2d(this.x, this.z, tx, tz) < 1.2) {
-        this.target = randomWaypoint(this.rng);
-        return;
+    for (const m of this.members) {
+      if (m.down) continue;
+      m.phase += dt * (m.panic > 0 ? 15 : 8);
+      const swing = Math.sin(m.phase) * 0.55;
+      m.mesh.userData.legs[0].rotation.x = swing;
+      m.mesh.userData.legs[1].rotation.x = -swing;
+      if (m.panic > 0) {
+        m.panic -= dt;
+        m.mesh.position.x += m.fleeX * 5.4 * dt;
+        m.mesh.position.z += m.fleeZ * 5.4 * dt;
+        m.mesh.rotation.y = -Math.atan2(m.fleeZ, m.fleeX) + Math.PI / 2;
+        m.mesh.userData.arms[0].rotation.x = Math.PI * 0.9;
+        m.mesh.userData.arms[1].rotation.x = Math.PI * 0.9;
+        // Clamp to the island.
+        m.mesh.position.x = clamp(m.mesh.position.x, -CITY.halfSize, CITY.halfSize + 40);
+        m.mesh.position.z = clamp(m.mesh.position.z, -CITY.halfSize, CITY.halfSize + 10);
+      } else {
+        m.mesh.userData.arms[0].rotation.x = -swing * 0.7;
+        m.mesh.userData.arms[1].rotation.x = swing * 0.7;
+        const loopLength = 2 * m.half;
+        m.t += (m.speed * dt) / loopLength;
+        if (m.t >= 1) { m.t = 0; m.edge = (m.edge + 1) % 4; }
+        const before = { x: m.mesh.position.x, z: m.mesh.position.z };
+        this.placeOnLoop(m);
+        const dx = m.mesh.position.x - before.x;
+        const dz = m.mesh.position.z - before.z;
+        if (Math.abs(dx) + Math.abs(dz) > 0.001) {
+          m.mesh.rotation.y = -Math.atan2(dz, dx) + Math.PI / 2;
+        }
       }
     }
-    const want = Math.atan2(tx - this.x, tz - this.z);
-    this.heading = turnToward(this.heading, want, 6 * dt);
-    let nx = this.x + Math.sin(this.heading) * speed * dt;
-    let nz = this.z + Math.cos(this.heading) * speed * dt;
-    // Keep off the building lots: if the next step is blocked, turn.
-    if (pointBlocked(this.colliders, nx, nz, 0.4)) {
-      this.heading += 1.8 * dt * 3;
-      nx = this.x + Math.sin(this.heading) * speed * dt;
-      nz = this.z + Math.cos(this.heading) * speed * dt;
-      if (pointBlocked(this.colliders, nx, nz, 0.4)) return;
-    }
-    this.x = clamp(nx, -WORLD_EDGE, WORLD_EDGE);
-    this.z = clamp(nz, -WORLD_EDGE, WORLD_EDGE + 30);
-    this.phase += dt * speed * 4.4;
-    this.mesh.position.set(this.x, Math.abs(Math.sin(this.phase)) * 0.04, this.z);
-    this.mesh.rotation.y = this.heading;
-    const limbs = this.mesh.userData.limbs;
-    const swing = Math.sin(this.phase) * (this.flee > 0 ? 0.8 : 0.45);
-    limbs[0].rotation.x = swing;
-    limbs[1].rotation.x = -swing;
-    limbs[2].rotation.x = -swing;
-    limbs[3].rotation.x = swing;
-  }
-}
-
-export function spawnPedestrians(scene, rng, colliders, count) {
-  const list = [];
-  for (let i = 0; i < count; i++) list.push(new Pedestrian(scene, rng, colliders));
-  return list;
-}
-
-// Panic everyone near a point (gunshot, crash, fast car).
-export function scareNearby(peds, x, z, radius, seconds = 4) {
-  for (const ped of peds) {
-    if (!ped.dead && distance2d(x, z, ped.x, ped.z) < radius) ped.scare(x, z, seconds);
   }
 }

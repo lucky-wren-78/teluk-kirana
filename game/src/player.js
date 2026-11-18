@@ -1,272 +1,172 @@
-// player.js - the player character and driving for Teluk Kirana.
-// On foot the player is a simple colourful capsule figure who walks
-// and sprints with WASD. Pressing E near a car enters it (stealing it
-// when it has a driver). Driving is arcade style: accelerate, brake,
-// steer, with simple collision response against buildings and cars.
+// player.js — Kira on foot: a low-poly harbour courier with a walk cycle,
+// plus the third-person camera rig that follows her (and her vehicle).
 
 import * as THREE from 'three';
-import { PLAYER, DRIVE, WORLD_EDGE } from './config.js';
-import { clamp, lerp, turnToward, distance2d } from './rng.js';
-import { collideCircle, clampToWorld } from './city.js';
+import { PLAYER } from './config.js';
+import { clamp, lerpAngle } from './rng.js';
+import { resolveCollisions } from './city.js';
 
-// Build the on-foot character: legs, torso, arms and a head.
 export function buildPlayerMesh() {
   const group = new THREE.Group();
-  const shirt = new THREE.MeshLambertMaterial({ color: 0xe4572e });
-  const pants = new THREE.MeshLambertMaterial({ color: 0x2c3e50 });
-  const skin = new THREE.MeshLambertMaterial({ color: 0xc98a5e });
-  const torso = new THREE.Mesh(new THREE.BoxGeometry(0.62, 0.72, 0.34), shirt);
-  torso.position.y = 1.12;
-  torso.castShadow = true;
+  const skin = new THREE.MeshLambertMaterial({ color: 0xb97a56 });
+  const shirt = new THREE.MeshLambertMaterial({ color: 0xe8542f }); // harbour-courier orange
+  const pants = new THREE.MeshLambertMaterial({ color: 0x27384a });
+
+  const torso = new THREE.Mesh(new THREE.BoxGeometry(0.52, 0.72, 0.3), shirt);
+  torso.position.y = 1.06;
   group.add(torso);
   const head = new THREE.Mesh(new THREE.SphereGeometry(0.21, 10, 8), skin);
-  head.position.y = 1.72;
+  head.position.y = 1.66;
   group.add(head);
-  const cap = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.23, 0.23, 0.1, 10),
-    new THREE.MeshLambertMaterial({ color: 0xf2b13c }),
-  );
-  cap.position.y = 1.88;
+  const cap = new THREE.Mesh(new THREE.CylinderGeometry(0.23, 0.24, 0.1, 10), new THREE.MeshLambertMaterial({ color: 0x0d3b3e }));
+  cap.position.y = 1.82;
   group.add(cap);
-  const legs = [];
-  for (const sx of [-0.16, 0.16]) {
-    const leg = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.72, 0.24), pants);
-    leg.position.set(sx, 0.4, 0);
+
+  const limbs = { legs: [], arms: [] };
+  for (const side of [-1, 1]) {
+    const leg = new THREE.Mesh(new THREE.BoxGeometry(0.17, 0.72, 0.19), pants);
+    leg.geometry.translate(0, -0.36, 0);
+    leg.position.set(0, 0.72, side * 0.13);
     group.add(leg);
-    legs.push(leg);
-    const arm = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.62, 0.18), shirt);
-    arm.position.set(sx * 2.4, 1.14, 0);
+    limbs.legs.push(leg);
+    const arm = new THREE.Mesh(new THREE.BoxGeometry(0.13, 0.62, 0.13), shirt);
+    arm.geometry.translate(0, -0.31, 0);
+    arm.position.set(0, 1.36, side * 0.34);
     group.add(arm);
-    legs.push(arm);
+    limbs.arms.push(arm);
   }
-  group.userData.limbs = legs;
+  group.userData.limbs = limbs;
   return group;
 }
 
 export class Player {
-  constructor(scene, startX, startZ) {
+  constructor(scene, colliders) {
     this.mesh = buildPlayerMesh();
-    this.mesh.position.set(startX, 0, startZ);
-    scene.add(this.mesh);
-    this.x = startX;
-    this.z = startZ;
-    this.heading = Math.PI; // face south toward the harbour
-    this.health = PLAYER.maxHealth;
-    this.lastHurtAt = -99;
-    this.car = null;        // the car being driven, or null on foot
+    this.pos = this.mesh.position;
+    this.pos.set(PLAYER.startPosition.x, 0, PLAYER.startPosition.z);
+    this.heading = Math.PI; // facing the harbour water, east behind her
+    this.speedNow = 0;
     this.walkPhase = 0;
-    this.speedNow = 0;      // for the HUD speedometer
-    this.dead = false;
-    // Driving state lives here so any car can be driven.
-    this.throttle = 0;
-    this.steer = 0;
-    this.carSpeed = 0;
-  }
-
-  get pos() {
-    if (this.car) return { x: this.car.x, z: this.car.z };
-    return { x: this.x, z: this.z };
-  }
-
-  get visiblePos() {
-    return this.pos;
-  }
-
-  hurt(amount, now) {
-    if (this.dead) return;
-    this.health -= amount;
-    this.lastHurtAt = now;
-    if (this.health <= 0) {
-      this.health = 0;
-      this.dead = true;
-    }
-  }
-
-  healFull() {
     this.health = PLAYER.maxHealth;
-    this.dead = false;
+    this.vehicle = null;    // vehicle she is driving, or null on foot
+    this.colliders = colliders;
+    scene.add(this.mesh);
   }
 
-  // Enter a car. Returns true when it was a carjacking (car had a driver).
-  enterCar(car) {
-    const jacked = !car.parked;
-    this.car = car;
-    car.parked = false;
-    car.driverFleeing = 0;
-    this.carSpeed = car.speed || 0;
-    this.mesh.visible = false;
-    return jacked;
-  }
+  get inVehicle() { return this.vehicle !== null; }
 
-  exitCar() {
-    if (!this.car) return;
-    const car = this.car;
-    // Step out to the left side of the car.
-    const sideX = Math.cos(car.heading) * -1.6;
-    const sideZ = -Math.sin(car.heading) * -1.6;
-    this.x = clampToWorld(car.x + sideX);
-    this.z = clampToWorld(car.z + sideZ);
-    this.heading = car.heading;
-    car.speed = 0;
-    this.car = null;
-    this.carSpeed = 0;
-    this.mesh.visible = true;
-  }
-
-  // Find the nearest enterable car within reach.
-  nearestCar(cars, maxDist) {
-    let best = null;
-    let bestD = maxDist;
-    for (const car of cars) {
-      const d = distance2d(this.x, this.z, car.x, car.z);
-      if (d < bestD) { bestD = d; best = car; }
+  // moveInput: {x: strafe-ish forward amount -1..1, z: sideways} in camera space,
+  // already rotated into world space by the caller. Simpler contract: the caller
+  // passes a world-space wish direction (wx, wz) and a sprint flag.
+  update(dt, wishX, wishZ, sprinting) {
+    if (this.inVehicle) {
+      // Ride along inside the vehicle; hide the walking figure in the cabin.
+      this.pos.copy(this.vehicle.pos);
+      this.heading = this.vehicle.heading;
+      this.mesh.position.set(this.pos.x, -3, this.pos.z); // tucked out of sight
+      return;
     }
-    return best;
-  }
-
-  update(dt, input, colliders, allCars, now) {
-    // Slow health regeneration after a quiet spell.
-    if (!this.dead && this.health > 0 && now - this.lastHurtAt > PLAYER.regenDelay) {
-      this.health = Math.min(PLAYER.maxHealth, this.health + PLAYER.regenPerSecond * dt);
-    }
-    if (this.car) this.updateDriving(dt, input, colliders, allCars);
-    else this.updateOnFoot(dt, input, colliders, now);
-  }
-
-  updateOnFoot(dt, input, colliders, now) {
-    let mx = 0;
-    let mz = 0;
-    if (input.forward) mz += 1;
-    if (input.back) mz -= 1;
-    if (input.left) mx -= 1;
-    if (input.right) mx += 1;
-    const moving = mx !== 0 || mz !== 0;
-    const sprint = input.sprint;
-    const speed = sprint ? PLAYER.sprintSpeed : PLAYER.walkSpeed;
-    this.speedNow = moving ? speed : 0;
-    if (moving) {
-      // Movement is relative to the camera yaw stored on the input.
-      const yaw = input.camYaw;
-      const sin = Math.sin(yaw);
-      const cos = Math.cos(yaw);
-      const wx = (mz * sin - mx * cos);
-      const wz = (mz * cos - mx * sin);
-      const len = Math.sqrt(wx * wx + wz * wz) || 1;
-      const vx = (wx / len) * speed;
-      const vz = (wz / len) * speed;
-      let nx = this.x + vx * dt;
-      let nz = this.z + vz * dt;
-      const res = collideCircle(colliders, nx, nz, PLAYER.radius);
-      nx = res.x;
-      nz = res.z;
-      this.x = clampToWorld(nx);
-      this.z = clamp(nz, -WORLD_EDGE - 6, WORLD_EDGE + 40);
-      this.heading = turnToward(this.heading, Math.atan2(vx, vz), 12 * dt);
-      this.walkPhase += dt * (sprint ? 13 : 9);
-    }
-    this.mesh.position.set(this.x, Math.abs(Math.sin(this.walkPhase)) * 0.05, this.z);
-    this.mesh.rotation.y = this.heading;
-    // Swing the limbs while walking.
-    const limbs = this.mesh.userData.limbs;
-    if (limbs) {
-      const swing = moving ? Math.sin(this.walkPhase) * 0.55 : 0;
-      limbs[0].rotation.x = swing;
-      limbs[1].rotation.x = -swing;
-      limbs[2].rotation.x = -swing;
-      limbs[3].rotation.x = swing;
-    }
-  }
-
-  updateDriving(dt, input, colliders, allCars) {
-    const car = this.car;
-    let speed = this.carSpeed;
-    const forward = Math.sign(speed) >= 0;
-    if (input.forward) {
-      speed += DRIVE.accel * dt * (1 - Math.max(0, speed) / (DRIVE.maxSpeed + 6));
-    } else if (input.back) {
-      if (speed > 0.6) speed -= DRIVE.brake * dt;
-      else speed -= DRIVE.reverse * dt * (1 + Math.min(0, speed) / DRIVE.maxReverse);
+    this.mesh.position.y = 0;
+    const wishLength = Math.hypot(wishX, wishZ);
+    if (wishLength > 0.01) {
+      const speed = sprinting ? PLAYER.sprintSpeed : PLAYER.walkSpeed;
+      const nx = (wishX / wishLength) * speed;
+      const nz = (wishZ / wishLength) * speed;
+      this.pos.x += nx * dt;
+      this.pos.z += nz * dt;
+      this.speedNow = speed;
+      const targetHeading = Math.atan2(nz, nx);
+      this.heading = lerpAngle(this.heading, targetHeading, clamp(dt * 12, 0, 1));
+      this.walkPhase += dt * (sprinting ? 13 : 9.5);
     } else {
-      speed -= speed * DRIVE.drag * dt;
-      if (Math.abs(speed) < 0.08) speed = 0;
+      this.speedNow = 0;
+      this.walkPhase += dt * 1.2; // idle sway
     }
-    speed = clamp(speed, -DRIVE.maxReverse, DRIVE.maxSpeed);
+    resolveCollisions(this.pos, PLAYER.radius, this.colliders);
+    this.mesh.position.set(this.pos.x, 0, this.pos.z);
+    this.mesh.rotation.y = -this.heading + Math.PI / 2;
 
-    let steer = 0;
-    if (input.left) steer += 1;
-    if (input.right) steer -= 1;
-    this.steer = lerp(this.steer, steer, 1 - Math.pow(0.0001, dt));
-    const speedFactor = clamp(Math.abs(speed) / 8, 0, 1);
-    const turnRate = DRIVE.gripTurn * this.steer * speedFactor * (forward ? 1 : -1);
-    if (Math.abs(speed) > 0.2) car.heading += turnRate * dt * clamp(Math.abs(speed) / 10, 0.35, 1);
-
-    let nx = car.x + Math.sin(car.heading) * speed * dt;
-    let nz = car.z + Math.cos(car.heading) * speed * dt;
-
-    // Collide with buildings: stop and bounce a little.
-    const res = collideCircle(colliders, nx, nz, 1.7);
-    if (res.hit) {
-      if (Math.abs(speed) > 9) this.crashHurt = Math.abs(speed);
-      speed *= -0.25;
-      nx = res.x;
-      nz = res.z;
-    }
-    // Collide with other cars: push and slow.
-    for (const other of allCars) {
-      if (other === car) continue;
-      const d = distance2d(nx, nz, other.x, other.z);
-      if (d < 3.1 && d > 0.001) {
-        const push = (3.1 - d) / 2;
-        const ux = (nx - other.x) / d;
-        const uz = (nz - other.z) / d;
-        nx += ux * push;
-        nz += uz * push;
-        other.x -= ux * push * 0.6;
-        other.z -= uz * push * 0.6;
-        if (Math.abs(speed) > 7) {
-          this.crashHurt = Math.abs(speed) * 0.8;
-          this.hitCar = other;
-        }
-        speed *= 0.55;
-      }
-    }
-    car.x = clampToWorld(nx);
-    car.z = clamp(nz, -WORLD_EDGE - 6, WORLD_EDGE + 40);
-    car.speed = speed;
-    this.carSpeed = speed;
-    this.speedNow = Math.abs(speed) * 3.6; // km/h for the HUD
-    car.mesh.position.set(car.x, 0, car.z);
-    car.mesh.rotation.y = car.heading;
-    const wheels = car.mesh.userData.wheels;
-    if (wheels) for (const w of wheels) w.rotation.x += speed * dt * 1.4;
+    const limbs = this.mesh.userData.limbs;
+    const swing = Math.sin(this.walkPhase) * (this.speedNow > 0 ? 0.62 : 0.05);
+    limbs.legs[0].rotation.x = swing;
+    limbs.legs[1].rotation.x = -swing;
+    limbs.arms[0].rotation.x = -swing * 0.8;
+    limbs.arms[1].rotation.x = swing * 0.8;
   }
 
-  // Third person chase camera. mode is 'foot' or 'car'.
-  updateCamera(camera, dt, input) {
-    const p = this.pos;
-    const dist = this.car ? 10.5 : 6.4;
-    const height = this.car ? 3.6 : 2.6;
-    const yaw = input.camYaw;
-    const cx = p.x - Math.sin(yaw) * dist;
-    const cz = p.z - Math.cos(yaw) * dist;
-    const cy = height + Math.sin(input.camPitch) * 3;
-    const blend = 1 - Math.pow(0.0001, dt);
-    camera.position.x = lerp(camera.position.x, cx, blend);
-    camera.position.y = lerp(camera.position.y, Math.max(1.2, cy), blend);
-    camera.position.z = lerp(camera.position.z, cz, blend);
-    camera.lookAt(p.x, 1.4, p.z);
+  enterVehicle(vehicle) {
+    this.vehicle = vehicle;
+    vehicle.driver = 'player';
   }
 
-  // Hard-place the camera (used by screenshot scenes and teleports).
-  snapCamera(camera, input) {
-    const p = this.pos;
-    const dist = this.car ? 10.5 : 6.4;
-    const height = this.car ? 3.6 : 2.6;
-    camera.position.set(
-      p.x - Math.sin(input.camYaw) * dist,
-      height,
-      p.z - Math.cos(input.camYaw) * dist,
+  exitVehicle() {
+    if (!this.vehicle) return null;
+    const vehicle = this.vehicle;
+    vehicle.driver = null;
+    vehicle.speed = 0;
+    this.vehicle = null;
+    // Step out on the left side of the vehicle.
+    const sideX = Math.sin(vehicle.heading) * 2.2;
+    const sideZ = -Math.cos(vehicle.heading) * 2.2;
+    this.pos.set(vehicle.pos.x + sideX, 0, vehicle.pos.z + sideZ);
+    resolveCollisions(this.pos, PLAYER.radius, this.colliders);
+    this.mesh.position.set(this.pos.x, 0, this.pos.z);
+    return vehicle;
+  }
+
+  teleport(x, z, heading) {
+    if (this.inVehicle) this.exitVehicle();
+    this.pos.set(x, 0, z);
+    if (heading !== undefined) this.heading = heading;
+    this.mesh.position.set(x, 0, z);
+  }
+}
+
+// Third-person camera: trails behind a focus point, mouse-drag orbits it,
+// and screenshot mode can pin it exactly with setShotCamera.
+export class CameraRig {
+  constructor(camera) {
+    this.camera = camera;
+    this.yaw = Math.PI;
+    this.pitch = 0.32;
+    this.distance = 9.5;
+    this.smoothed = new THREE.Vector3(150, 4, 44);
+    this.pinned = null;
+  }
+
+  pin(position, lookAt) {
+    this.pinned = { position, lookAt };
+    this.camera.position.copy(position);
+    this.camera.lookAt(lookAt);
+  }
+
+  unpin() { this.pinned = null; }
+
+  addDrag(dx, dy) {
+    this.yaw -= dx * 0.005;
+    this.pitch = clamp(this.pitch + dy * 0.004, 0.06, 1.15);
+  }
+
+  update(dt, focusPos, focusHeading, driving) {
+    if (this.pinned) return;
+    const dist = driving ? 11.5 : this.distance;
+    const height = driving ? 4.4 : 3.1;
+    // When driving, ease the camera behind the vehicle's heading.
+    if (driving) {
+      const behind = focusHeading + Math.PI;
+      let delta = behind - this.yaw;
+      while (delta > Math.PI) delta -= Math.PI * 2;
+      while (delta < -Math.PI) delta += Math.PI * 2;
+      this.yaw += delta * clamp(dt * 1.6, 0, 1);
+    }
+    const target = new THREE.Vector3(
+      focusPos.x + Math.cos(this.yaw) * Math.cos(this.pitch) * dist,
+      height + Math.sin(this.pitch) * dist * 0.55,
+      focusPos.z + Math.sin(this.yaw) * Math.cos(this.pitch) * dist
     );
-    camera.lookAt(p.x, 1.4, p.z);
+    const blend = clamp(dt * (driving ? 5.5 : 8), 0, 1);
+    this.smoothed.lerp(target, blend);
+    this.camera.position.copy(this.smoothed);
+    this.camera.lookAt(focusPos.x, 1.6, focusPos.z);
   }
 }

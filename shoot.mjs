@@ -1,109 +1,84 @@
-// shoot.mjs - take the four entry screenshots of Teluk Kirana.
-// Serves game/ with a small built-in static server, opens each
-// scene listed in shots.json in headless Chromium through
-// Playwright, waits for the game to signal window.__tkReady plus a
-// render settle delay, then saves JPEGs into screenshots/, stepping
-// the quality down until each file fits the 256 KiB gate limit.
+// Teluk Kirana — screenshot harvester.
+//
+// Boots the local static server (serve.ts), walks every entry in shots.json,
+// loads the game with that entry's query string (the game stages a deterministic
+// scene for ?shot=...&seed=...), waits until the page reports it is ready, and
+// saves a 1280x720 JPEG into screenshots/. If a frame comes out over the
+// 256 KiB gate limit, quality is stepped down and the shot retaken.
+//
+// Playwright is resolved from the sibling tools folder when it is not installed
+// beside this script, so the harvester works on this machine as-is:
+//   node shoot.mjs
 
-import { createServer } from 'node:http';
-import { readFileSync, statSync, existsSync, mkdirSync } from 'node:fs';
-import { extname, join, resolve, sep } from 'node:path';
+import { spawn } from 'node:child_process';
+import { existsSync, readFileSync, statSync } from 'node:fs';
+import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const here = fileURLToPath(new URL('.', import.meta.url));
-const gameRoot = resolve(join(here, 'game'));
-const shots = JSON.parse(readFileSync(join(here, 'shots.json'), 'utf8'));
-const outDir = join(here, 'screenshots');
-mkdirSync(outDir, { recursive: true });
+const repoDir = dirname(fileURLToPath(import.meta.url));
+const PORT = 8931;
+const BASE = `http://127.0.0.1:${PORT}`;
+const MAX_SHOT_BYTES = 262144;
 
-const TYPES = {
-  '.html': 'text/html; charset=utf-8',
-  '.css': 'text/css; charset=utf-8',
-  '.js': 'text/javascript; charset=utf-8',
-  '.mjs': 'text/javascript; charset=utf-8',
-  '.json': 'application/json; charset=utf-8',
-  '.png': 'image/png',
-  '.jpg': 'image/jpeg',
-};
-
-// Minimal static file server for the game folder.
-const server = createServer((req, res) => {
-  let pathname = '/';
-  try {
-    pathname = decodeURIComponent(new URL(req.url, 'http://localhost').pathname);
-  } catch {
-    res.writeHead(400).end();
-    return;
-  }
-  if (pathname.endsWith('/')) pathname += 'index.html';
-  const filePath = resolve(join(gameRoot, '.' + pathname));
-  if (filePath !== gameRoot && !filePath.startsWith(gameRoot + sep)) {
-    res.writeHead(403).end();
-    return;
-  }
-  if (!existsSync(filePath) || !statSync(filePath).isFile()) {
-    res.writeHead(404).end();
-    return;
-  }
-  res.writeHead(200, {
-    'content-type': TYPES[extname(filePath).toLowerCase()] ?? 'application/octet-stream',
-    'cache-control': 'no-store',
-  });
-  res.end(readFileSync(filePath));
-});
-
-await new Promise((done) => server.listen(0, '127.0.0.1', done));
-const port = server.address().port;
-const base = 'http://127.0.0.1:' + port;
-
-// Find a Playwright installation on this machine: a local
-// node_modules first, then the shared tools folder beside the repo.
 async function loadPlaywright() {
-  const moduleUrls = [
-    new URL('./node_modules/playwright/index.mjs', import.meta.url),
-    new URL('../../tools-browser/node_modules/playwright/index.mjs', import.meta.url),
-  ];
-  for (const url of moduleUrls) {
-    try {
-      if (existsSync(fileURLToPath(url))) return await import(url.href);
-    } catch {
-      // Try the next candidate.
+  try {
+    const mod = await import('playwright');
+    if (mod.chromium) return mod;
+  } catch { /* fall through to the sibling tools folder */ }
+  const { createRequire } = await import('node:module');
+  const requireFromTools = createRequire(join(repoDir, '..', '..', 'tools-browser', 'package.json'));
+  const mod = requireFromTools('playwright');
+  if (mod && mod.chromium) return mod;
+  throw new Error('shoot.mjs: could not load playwright from any known location');
+}
+
+function waitForServer(url, timeoutMs) {
+  const deadline = Date.now() + timeoutMs;
+  return new Promise((resolvePromise, rejectPromise) => {
+    const attempt = () => {
+      fetch(url).then((res) => {
+        if (res.ok) resolvePromise();
+        else retry();
+      }).catch(retry);
+    };
+    const retry = () => {
+      if (Date.now() > deadline) rejectPromise(new Error(`server at ${url} never came up`));
+      else setTimeout(attempt, 200);
+    };
+    attempt();
+  });
+}
+
+const server = spawn(process.execPath, [join(repoDir, 'serve.ts'), '--port', String(PORT)], { stdio: 'ignore' });
+try {
+  await waitForServer(`${BASE}/index.html`, 15000);
+  const { chromium } = await loadPlaywright();
+  const browser = await chromium.launch({ args: ['--use-gl=swiftshader', '--enable-unsafe-swiftshader'] });
+  const shots = JSON.parse(readFileSync(join(repoDir, 'shots.json'), 'utf8'));
+
+  for (const shot of shots) {
+    const page = await browser.newPage({ viewport: { width: 1280, height: 720 } });
+    const errors = [];
+    page.on('pageerror', (err) => errors.push(String(err)));
+    await page.goto(`${BASE}/index.html${shot.query}`, { waitUntil: 'load' });
+    await page.waitForFunction(() => window.__TK_READY__ === true, null, { timeout: 30000 });
+    await page.waitForTimeout(600);
+
+    const outPath = join(repoDir, 'screenshots', shot.name);
+    let quality = 82;
+    for (;;) {
+      await page.screenshot({ path: outPath, type: 'jpeg', quality });
+      const size = statSync(outPath).size;
+      if (size <= MAX_SHOT_BYTES || quality <= 40) {
+        console.log(`${shot.name}: ${size} bytes at quality ${quality}${errors.length ? ` (page errors: ${errors.join('; ')})` : ''}`);
+        break;
+      }
+      quality -= 14;
     }
+    await page.close();
   }
-  return await import('playwright');
+  await browser.close();
+} finally {
+  server.kill();
 }
-
-const playwright = await loadPlaywright();
-const chromium = playwright.chromium ?? playwright.default?.chromium;
-if (!chromium) throw new Error('playwright chromium not found');
-
-const browser = await chromium.launch({
-  args: ['--use-gl=swiftshader', '--enable-unsafe-swiftshader', '--no-sandbox'],
-});
-const page = await browser.newPage({ viewport: { width: 1280, height: 720 } });
-page.on('console', (msg) => {
-  if (msg.type() === 'error') console.log('[page error]', msg.text());
-});
-page.on('pageerror', (err) => console.log('[pageerror]', err.message));
-
-const MAX_BYTES = 262144;
-for (const shot of shots) {
-  const url = base + '/index.html' + shot.query;
-  console.log('shooting', shot.name, url);
-  await page.goto(url, { waitUntil: 'load', timeout: 60000 });
-  await page.waitForFunction(() => window.__tkReady === true, null, { timeout: 60000 });
-  await page.waitForTimeout(2500);
-  const target = join(outDir, shot.name);
-  let quality = 88;
-  for (;;) {
-    await page.screenshot({ path: target, type: 'jpeg', quality });
-    const size = statSync(target).size;
-    console.log(' ', shot.name, 'quality', quality, 'bytes', size);
-    if (size <= MAX_BYTES || quality <= 40) break;
-    quality -= 10;
-  }
-}
-
-await browser.close();
-server.close();
-console.log('done');
+if (!existsSync(join(repoDir, 'screenshots'))) throw new Error('screenshots folder missing');

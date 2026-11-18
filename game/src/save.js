@@ -1,69 +1,42 @@
-// save.js - localStorage save game for Teluk Kirana.
-// Stores cash, respect, finished story jobs, the player's last
-// position and a clean wanted state. Autosaves on a timer, on job
-// completion and on page hide. A reset button lives on the start
-// screen.
+// save.js — localStorage persistence: cash, respect, story progress,
+// and where Kira was standing, so a reload continues the season.
 
-const SAVE_KEY = 'teluk-kirana-save-v1';
-
-export const DEFAULT_SAVE = {
-  cash: 250,
-  respect: 0,
-  jobsDone: [],
-  sideDone: 0,
-  x: 0,
-  z: 0,
-  station: 0,
-};
+import { SAVE_KEY, PLAYER } from './config.js';
 
 export function loadSave() {
   try {
-    const raw = window.localStorage.getItem(SAVE_KEY);
-    if (!raw) return { ...DEFAULT_SAVE };
-    const parsed = JSON.parse(raw);
-    return {
-      cash: Number.isFinite(parsed.cash) ? parsed.cash : DEFAULT_SAVE.cash,
-      respect: Number.isFinite(parsed.respect) ? parsed.respect : 0,
-      jobsDone: Array.isArray(parsed.jobsDone) ? parsed.jobsDone : [],
-      sideDone: Number.isFinite(parsed.sideDone) ? parsed.sideDone : 0,
-      x: Number.isFinite(parsed.x) ? parsed.x : 0,
-      z: Number.isFinite(parsed.z) ? parsed.z : 0,
-      station: Number.isFinite(parsed.station) ? parsed.station : 0,
-    };
+    const raw = localStorage.getItem(SAVE_KEY);
+    if (!raw) return null;
+    const data = JSON.parse(raw);
+    if (typeof data !== 'object' || data === null) return null;
+    return data;
   } catch {
-    return { ...DEFAULT_SAVE };
+    return null; // private mode or a corrupt blob: start fresh, never crash
   }
 }
 
-export function writeSave(state) {
+export function storeSave(state) {
   try {
-    window.localStorage.setItem(SAVE_KEY, JSON.stringify({
+    localStorage.setItem(SAVE_KEY, JSON.stringify({
       cash: Math.round(state.cash),
       respect: Math.round(state.respect),
-      jobsDone: state.jobsDone,
-      sideDone: state.sideDone || 0,
-      x: Math.round(state.x * 10) / 10,
-      z: Math.round(state.z * 10) / 10,
-      station: state.station || 0,
+      storyIndex: state.jobs.storyIndex,
+      completedStory: state.jobs.completedStory,
+      position: { x: Math.round(state.position.x * 10) / 10, z: Math.round(state.position.z * 10) / 10 },
+      hour: state.hour,
     }));
-    return true;
-  } catch {
-    return false;
-  }
+  } catch { /* storage full or blocked: the game simply will not persist */ }
 }
 
-export function clearSave() {
-  try {
-    window.localStorage.removeItem(SAVE_KEY);
-  } catch {
-    // Storage may be unavailable; nothing else to do.
-  }
+export function wipeSave() {
+  try { localStorage.removeItem(SAVE_KEY); } catch { /* nothing to wipe */ }
 }
 
-export function hasSave() {
-  try {
-    return window.localStorage.getItem(SAVE_KEY) !== null;
-  } catch {
-    return false;
-  }
+export function freshState() {
+  return {
+    cash: PLAYER.startCash,
+    respect: 0,
+    position: { ...PLAYER.startPosition },
+    hour: null,
+  };
 }

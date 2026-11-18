@@ -1,63 +1,73 @@
-// serve.ts - a tiny local static server for Teluk Kirana.
-// Run `node serve.ts` and open the printed address to play the game
-// from the game/ folder. Standard library only, no build step.
-// Paths are kept inside game/ and the common web MIME types are set
-// so ES modules and the import map load correctly.
+// Teluk Kirana — pocket static server for local play-testing.
+//
+// `node serve.ts` (optionally `--port 8123`) serves the game/ folder on
+// 127.0.0.1 so the entry can be played and screenshotted without any build
+// step or network access. It is deliberately boring: correct MIME types for
+// the file kinds a browser game ships, a hard refusal for any path that tries
+// to climb out of game/, and no caching so edits show up on reload.
 
-import { createReadStream, existsSync, statSync } from 'node:fs';
+import { createReadStream, statSync } from 'node:fs';
 import { createServer } from 'node:http';
 import { extname, join, normalize, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const gameRoot = resolve(fileURLToPath(new URL('./game', import.meta.url)));
 
-const args = process.argv.slice(2);
-const portFlag = args.indexOf('--port');
-const wanted = portFlag >= 0 ? Number(args[portFlag + 1]) : 8080;
-const port = Number.isInteger(wanted) && wanted > 0 && wanted < 65536 ? wanted : 8080;
+const argv = process.argv.slice(2);
+const portFlagAt = argv.indexOf('--port');
+const wantedPort = portFlagAt === -1 ? 8080 : Number(argv[portFlagAt + 1]);
+const listenPort = Number.isInteger(wantedPort) && wantedPort > 0 && wantedPort < 65536 ? wantedPort : 8080;
 
-const TYPES: Record<string, string> = {
+const CONTENT_TYPES: Record<string, string> = {
   '.html': 'text/html; charset=utf-8',
   '.css': 'text/css; charset=utf-8',
   '.js': 'text/javascript; charset=utf-8',
   '.mjs': 'text/javascript; charset=utf-8',
   '.json': 'application/json; charset=utf-8',
-  '.png': 'image/png',
   '.jpg': 'image/jpeg',
   '.jpeg': 'image/jpeg',
+  '.png': 'image/png',
   '.svg': 'image/svg+xml',
   '.ico': 'image/x-icon',
   '.wasm': 'application/wasm',
-  '.woff2': 'font/woff2',
+  '.bin': 'application/octet-stream',
 };
 
-const server = createServer((req, res) => {
-  let pathname = '/';
+const server = createServer((request, response) => {
+  let decodedPath: string;
   try {
-    pathname = decodeURIComponent(new URL(req.url ?? '/', 'http://localhost').pathname);
+    decodedPath = decodeURIComponent(new URL(request.url ?? '/', 'http://127.0.0.1').pathname);
   } catch {
-    res.writeHead(400).end('bad request');
+    response.writeHead(400).end('malformed path');
     return;
   }
-  if (pathname.endsWith('/')) pathname += 'index.html';
-  const filePath = resolve(join(gameRoot, normalize(pathname)));
-  if (filePath !== gameRoot && !filePath.startsWith(gameRoot + sep)) {
-    res.writeHead(403).end('forbidden');
+  if (decodedPath.endsWith('/')) decodedPath += 'index.html';
+
+  const targetFile = resolve(join(gameRoot, normalize(decodedPath)));
+  const insideGame = targetFile === gameRoot || targetFile.startsWith(gameRoot + sep);
+  if (!insideGame) {
+    response.writeHead(403).end('outside the game folder');
     return;
   }
-  if (!existsSync(filePath) || !statSync(filePath).isFile()) {
-    res.writeHead(404).end('not found');
+
+  let byteSize: number;
+  try {
+    const info = statSync(targetFile);
+    if (!info.isFile()) throw new Error('directory, not a file');
+    byteSize = info.size;
+  } catch {
+    response.writeHead(404).end('no such file');
     return;
   }
-  const size = statSync(filePath).size;
-  res.writeHead(200, {
-    'content-type': TYPES[extname(filePath).toLowerCase()] ?? 'application/octet-stream',
-    'content-length': size,
+
+  response.writeHead(200, {
+    'content-type': CONTENT_TYPES[extname(targetFile).toLowerCase()] ?? 'application/octet-stream',
+    'content-length': byteSize,
     'cache-control': 'no-store',
   });
-  createReadStream(filePath).pipe(res);
+  createReadStream(targetFile).pipe(response);
 });
 
-server.listen(port, '127.0.0.1', () => {
-  console.log('Teluk Kirana is playing at http://localhost:' + port);
+server.listen(listenPort, '127.0.0.1', () => {
+  console.log(`Teluk Kirana game/ serving at http://127.0.0.1:${listenPort}`);
 });
