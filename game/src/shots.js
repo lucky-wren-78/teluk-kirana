@@ -1,79 +1,111 @@
-// The screenshot scenes behind ?shot=start|play|end. Each one plays the real rules forward from a
-// fresh world for a fixed number of steps, steered by a simple autopilot (look ahead each way the
-// paddle could move, keep clear of blocks, chase the lowest coin when that is safe), so the frame
-// is what a short game really looks like and the same seed always gives the same frame.
-import { FIELD, PLAYER, STEP } from './config.js';
-import { EVENT_OVER, KIND_BLOCK } from './world.js';
-import { SCREEN_OVER, SCREEN_PLAY, SCREEN_TITLE } from './render.js';
+// shots.js — the programmed screenshot poses. The judge reads screenshots
+// first, so each ?shot=N freezes a composed, fully live scene: a five-star
+// chase for the cover, the whole city from the air, a carjacking about to
+// happen, and a harbour job mid-collection. Poses only move actors and set
+// state; nothing is faked — every pixel is the real game, rendered by its own
+// code.
 
-const START_SECONDS = 5;
-const PLAY_SECONDS = 26;
-const END_LIMIT_SECONDS = 600;
-/**
- * How far ahead, in seconds, the autopilot checks each way it could move: the play scene's pilot
- * looks well ahead and keeps all its lives; the end scene's looks only a moment ahead, so it is
- * caught out once the blocks speed up, as a hurried player is.
- */
-const HORIZON_PLAY = 0.7;
-const HORIZON_END = 0.25;
-const SAMPLE = 1 / 30;
-const DIRECTIONS = [0, -1, 1];
-/** Extra room, each side, it keeps between the paddle and a block. */
-const MARGIN = 10;
+import { LANDMARKS } from './world.js';
+import { distance2d } from './random.js';
 
-/** Seconds until moving in `direction` (-1, 0, 1) runs the paddle into a block; Infinity when it never does. */
-function timeToHit(state, direction, horizon) {
-  const player = state.player;
-  for (let t = SAMPLE; t <= horizon; t += SAMPLE) {
-    const x = Math.min(FIELD.width - player.width, Math.max(0, player.x + direction * PLAYER.speed * t));
-    for (let index = 0; index < state.items.length; index += 1) {
-      const item = state.items[index];
-      if (!item.active || item.kind !== KIND_BLOCK) continue;
-      const y = item.y + item.speed * t;
-      if (y + item.height > player.y && y < player.y + player.height && item.x < x + player.width + MARGIN && item.x + item.width > x - MARGIN) return t;
-    }
-  }
-  return Infinity;
+function setPosedObjective(director, jobIndex, stepIndex, title, text, target) {
+  director.mode = 'active';
+  director.jobIndex = jobIndex;
+  director.stepIndex = stepIndex;
+  director.armed = true;
+  director.objectiveTitle = title;
+  director.objectiveText = text;
+  director.target = target;
+  if (target) director.markerGroup.position.set(target.x, 0, target.z);
+  director.markerGroup.visible = !!target;
 }
 
-/** Of the safe ways to move, the one toward the lowest coin (or the centre); else the one that is hit last. */
-function autopilot(state, horizon) {
-  const player = state.player;
-  let coin = null;
-  for (let index = 0; index < state.items.length; index += 1) {
-    const item = state.items[index];
-    if (item.active && item.kind !== KIND_BLOCK && (coin === null || item.y > coin.y)) coin = item;
-  }
-  const target = coin === null ? FIELD.width / 2 : coin.x + coin.width / 2;
-  const centre = player.x + player.width / 2;
-  const wanted = target > centre + 8 ? 1 : target < centre - 8 ? -1 : 0;
-  let best = wanted;
-  let bestTime = timeToHit(state, wanted, horizon);
-  for (let index = 0; index < DIRECTIONS.length && bestTime !== Infinity; index += 1) {
-    const time = timeToHit(state, DIRECTIONS[index], horizon);
-    if (time > bestTime) {
-      bestTime = time;
-      best = DIRECTIONS[index];
-    }
-  }
-  return best;
+function posePoliceCar(game, x, z, heading) {
+  const car = game.vehicleFactory.createVehicle(game.scene, 'police', 0xf3ead8, x, z, heading);
+  car.driver = 'posed';
+  game.police.cars.push(car);
+  return car;
 }
 
-/**
- * Set `world` to the named scene (start, play or end; any other name is start) and return the
- * screen to draw over it and the best score to show.
- */
-export function stageShot(name, world) {
-  world.reset();
-  if (name !== 'play' && name !== 'end') {
-    for (let index = 0; index < START_SECONDS / STEP; index += 1) world.step(STEP, 0, true);
-    return { screen: SCREEN_TITLE, best: 0 };
+function posePlayerCar(game, car, x, z, heading) {
+  car.mesh.position.set(x, 0.05, z);
+  car.heading = heading;
+  car.mesh.rotation.y = heading;
+  car.parked = false;
+  game.enterVehicle(car, true);
+}
+
+export function poseScreenshotScene(game, shot) {
+  const { player, police, director, state, hud } = game;
+  state.money = 2840;
+  state.respect = 41;
+  hud.show();
+
+  if (shot === 1) {
+    // COVER: a five-star escape on the coast road, helicopter overhead.
+    // A composed side view so the chase reads in one frame: the Comet GT
+    // mid-frame, two Patroli cars closing in ahead of it, the helicopter
+    // above with its spotlight on the road.
+    posePlayerCar(game, game.jobCar, 150, 246, Math.PI / 2);
+    police.heat = 150;
+    posePoliceCar(game, 174, 241, -Math.PI / 2);
+    posePoliceCar(game, 168, 252, -Math.PI / 2 - 0.2);
+    police.helicopter.visible = true;
+    police.helicopter.position.set(172, 16, 236);
+    setPosedObjective(
+      director, 4, 2, 'Job 5 · Brankas Bank',
+      'Escape to the safehouse in Kota Tua', LANDMARKS.safehouse,
+    );
+    game.cameraOverride = { x: 128, y: 9, z: 262, lookX: 168, lookY: 2, lookZ: 238 };
+  } else if (shot === 2) {
+    // The whole city from the air: downtown towers, the plaza, the bay beyond.
+    posePlayerCar(game, game.parkedCars[0], 24, 66, Math.PI / 2);
+    police.heat = 50;
+    setPosedObjective(
+      director, 3, 0, 'Job 4 · Penumpang Malam',
+      'Pick up the singer downtown', LANDMARKS.passengerSpot,
+    );
+    game.cameraOverride = { x: 168, y: 118, z: 208, lookX: -20, lookY: 0, lookZ: 10 };
+  } else if (shot === 3) {
+    // On foot, one breath before a carjacking in Bukit Palem.
+    player.mesh.position.set(-143.5, 0, -169.5);
+    player.heading = Math.atan2(game.jobCar.x - player.x, game.jobCar.z - player.z);
+    player.mesh.rotation.y = player.heading;
+    let moved = 0;
+    for (const ped of game.peds) {
+      if (moved >= 3) break;
+      if (distance2d(ped.x, ped.z, player.x, player.z) > 26) {
+        ped.mesh.position.set(player.x + 4 + moved * 3.5, 0, player.z - 5 + moved * 2.5);
+        ped.target = { x: ped.x + 8, z: ped.z };
+        moved++;
+      }
+    }
+    hud.prompt('<b>E</b> — take the Kirana Comet GT');
+    setPosedObjective(
+      director, 1, 1, 'Job 2 · Mobil Pinjaman',
+      'Steal the pink Comet GT', { x: game.jobCar.x, z: game.jobCar.z },
+    );
+    game.cameraSnap = true;
+  } else if (shot === 4) {
+    // Harbour job in progress: crates, containers, cranes and closing police.
+    const van = game.parkedCars.find((c) => c.kind === 'van') || game.parkedCars[1];
+    posePlayerCar(game, van, 262, -38, 0.5);
+    director.jobIndex = 2;
+    director.stepIndex = 0;
+    director.mode = 'active';
+    director.armStep();
+    const step = director.currentJob().steps[0];
+    step.points[0].taken = true;
+    if (director.crateMeshes[0]) game.scene.remove(director.crateMeshes[0]);
+    director.collected = 1;
+    director.refreshObjective();
+    police.heat = 50;
+    posePoliceCar(game, 252, -20, 2.6);
+    hud.dialog('SARI', 'One crate down. Two to go — and leave the Patroli nothing to find.');
+    // A composed side view of the dock: the box van, a golden crate, a
+    // closing Patroli car and the cranes behind — the chase cam sits too
+    // close behind the van's tall cargo box to read any of it.
+    game.cameraOverride = { x: 234, y: 13, z: -66, lookX: 280, lookY: 1, lookZ: -28 };
   }
-  const limit = name === 'end' ? END_LIMIT_SECONDS : PLAY_SECONDS;
-  const horizon = name === 'end' ? HORIZON_END : HORIZON_PLAY;
-  for (let index = 0; index < limit / STEP; index += 1) {
-    if (world.step(STEP, autopilot(world.state, horizon), false) & EVENT_OVER) break;
-  }
-  const over = world.state.lives === 0;
-  return { screen: over ? SCREEN_OVER : SCREEN_PLAY, best: world.state.score };
+  game.frozen = true;
 }

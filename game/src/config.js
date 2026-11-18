@@ -1,61 +1,81 @@
-// Every tuning number and colour in one place. The playfield is a fixed 1280x720 logical area;
-// the renderer scales it to the window, so no rule below depends on the screen size.
+// config.js — the single source of truth for Teluk Kirana's constants: the
+// island grid, the four districts, the golden-hour palette and the tuning of
+// every system. Pure data and pure helpers; no DOM, no three.js in here.
 
-export const FIELD = { width: 1280, height: 720, groundY: 664 };
+export const GAME_TITLE = 'TELUK KIRANA';
+export const GAME_SUBTITLE = 'Heat Season';
+export const SAVE_KEY = 'teluk-kirana-heat-season-v1';
 
-/** The simulation's fixed step, in seconds: 60 updates a second whatever the display's rate. */
-export const STEP = 1 / 60;
-
-export const PLAYER = {
-  width: 72,
-  height: 24,
-  speed: 560,
-  invulnerable: 1.5,
+// The island is a square of land around the origin. Streets run on a grid:
+// a street centre line every pitch, asphalt roadWidth wide, the rest of each
+// cell a buildable block with sidewalks, palms and buildings.
+export const CITY = {
+  pitch: 60, // metres between neighbouring street centre lines
+  roadWidth: 16, // asphalt width inside a pitch cell
+  blockSize: 44, // buildable square inside each pitch cell
+  gridLines: 9, // streets per axis, indices -4..4
+  halfExtent: 240, // coordinate of the outermost street centre line
+  landHalf: 318, // half-size of the island's sand/grass square
+  waterLevel: -0.55, // sea surface height
+  sidewalkTop: 0.32, // raised pavement height of each block
 };
 
-export const LIVES = 3;
-
-export const BLOCK = {
-  minWidth: 40,
-  maxWidth: 110,
-  height: 36,
-  speed: 240,
-  speedPerLevel: 30,
-  speedJitter: 90,
-  interval: 0.55,
-  intervalScale: 0.88,
-  minInterval: 0.14,
-  dodgePoints: 1,
+// Districts by quadrant: the harbour fills the east, the old town the west,
+// palm-roofed houses the north, downtown towers the centre-south.
+export const DISTRICTS = {
+  harbour: { id: 'harbour', name: 'Pelabuhan Kirana', short: 'HBR' },
+  oldtown: { id: 'oldtown', name: 'Kota Tua', short: 'OLD' },
+  downtown: { id: 'downtown', name: 'Pusat Kota', short: 'DWN' },
+  palm: { id: 'palm', name: 'Bukit Palem', short: 'PLM' },
 };
 
-export const COIN = {
-  size: 24,
-  speed: 190,
-  speedPerLevel: 14,
-  interval: 1.4,
-  intervalJitter: 0.8,
-  points: 10,
-};
+export function districtAt(x, z) {
+  if (x > 95) return DISTRICTS.harbour;
+  if (x < -95) return DISTRICTS.oldtown;
+  if (z < -95) return DISTRICTS.palm;
+  return DISTRICTS.downtown;
+}
 
-/** Seconds of play per level, and the last level: speeds and spawn rates stop growing there. */
-export const LEVEL = { seconds: 12, max: 12 };
-
-/** How many falling things can exist at once; the pool is allocated once, at boot. */
-export const POOL_SIZE = 64;
-
+// Golden-hour art direction: warm sun, peach haze, teal sea.
 export const PALETTE = {
-  backdrop: '#11141b',
-  sky: '#1b1f2a',
-  ground: '#2a3040',
-  player: '#4fc3f7',
-  block: '#e5534b',
-  coin: '#f2c94c',
-  panel: '#252b38',
-  text: '#eef1f5',
-  muted: '#8b93a3',
+  sky: 0xffd9a0,
+  fog: 0xf7bd83,
+  sun: 0xffb066,
+  sunIntensity: 2.6,
+  hemiSky: 0xffe3b3,
+  hemiGround: 0x7a5c3e,
+  hemiIntensity: 0.85,
+  sea: 0x12808f,
+  sand: 0xeacf9d,
+  grass: 0x77a24e,
+  asphalt: 0x3c4148,
+  sidewalk: 0xb9ac97,
+  lanePaint: 0xf5e9c9,
 };
 
-export const FONT = 'system-ui, -apple-system, "Segoe UI", sans-serif';
+export const TUNING = {
+  playerWalkSpeed: 7.2,
+  playerSprintSpeed: 11.5,
+  playerRadius: 0.55,
+  playerHealth: 100,
+  carRadius: 2.35,
+  trafficCount: 15,
+  trafficSpeed: 11.5,
+  pedestrianCount: 42,
+  policeMaxCars: 6,
+  heatDecayPerSecond: 1.35,
+  heatCalmDelay: 5.0,
+  bustedRadius: 4.2,
+  bustedSeconds: 2.4,
+};
 
-/** Where the best score is kept between visits (this browser only). */
-export const BEST_KEY = 'block-dodger.best';
+// Wanted stars follow heat: five thresholds, five stars.
+export const HEAT_STARS = [1, 22, 45, 72, 105, 145];
+
+export function starsForHeat(heat) {
+  let stars = 0;
+  for (let i = 1; i < HEAT_STARS.length; i++) {
+    if (heat >= HEAT_STARS[i]) stars = i;
+  }
+  return stars;
+}
